@@ -68,6 +68,12 @@ static void knife(void)
     CHECK(g->world.soldiers[0].weapon.id == WEAPON_NONE, "and leaves the hands empty");
     scene_free(g);
 
+    g = scene("Arena", 50, WEAPON_KNIFE, WEAPON_AK74);
+    settle(g);
+    t = run(g, 60, hold_drop);
+    CHECK(t.hits >= 1 && t.bloods == t.hits, "a thrown knife's hit is heard, with blood (%d hits, %d heard)", t.hits, t.bloods);
+    scene_free(g);
+
     g = scene("Arena", 150, WEAPON_BOW, WEAPON_AK74);
     settle(g);
     run(g, 60, tap_drop);

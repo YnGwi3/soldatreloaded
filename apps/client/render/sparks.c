@@ -332,7 +332,9 @@ static void sparks_event(Sparks *s, const Context *ctx, const World *w, const Ev
     case EVENT_THING_HIT:
         add(s, e->thing_hit.pos, vec2_scale(e->thing_hit.vel, -0.02f * (0.4f + rand01(s) * 0.4f)), SPARK_SMOKE, 70);
         break;
-    case EVENT_BLOOD: blood(s, e->blood.pos, e->blood.vel); break;
+    case EVENT_BLOOD:
+        if (!e->blood.bloodless) blood(s, e->blood.pos, e->blood.vel);
+        break;
     case EVENT_EXPLOSION: explosion(s, e->explosion.pos, e->explosion.weapon, e->explosion.radius); break;
     case EVENT_CLUSTER_SPLIT: add(s, e->cluster_split.pos, vec2(0, 0), SPARK_SPLIT_SMOKE, 55); break;
     case EVENT_ROPE_CUT: add(s, e->rope_cut.pos, vec2(0, 0), SPARK_LIL_SMOKE, 25); break; // the rope's snap, wherever it was cut

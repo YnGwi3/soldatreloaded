@@ -40,6 +40,7 @@ void settle(Game *g);
 typedef struct Tally {
     int spawned[WEAPON_COUNT]; // bullets, by weapon
     int fired, hits, kills, explosions;
+    int bloods; // hits heard and seen (EVENT_BLOOD)
     float damage;
 } Tally;
 

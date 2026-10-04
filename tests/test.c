@@ -60,6 +60,7 @@ static void tally(Tally *t, const Events *events)
         case EVENT_BULLET_SPAWN: t->spawned[e->bullet_spawn.weapon]++; break;
         case EVENT_FIRE: t->fired++; break;
         case EVENT_HIT: t->hits++; break;
+        case EVENT_BLOOD: t->bloods++; break;
         case EVENT_KILL: t->kills++; break;
         case EVENT_EXPLOSION: t->explosions++; break;
         case EVENT_DAMAGE: t->damage += e->damage.amount; break;

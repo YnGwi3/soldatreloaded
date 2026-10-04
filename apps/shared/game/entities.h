@@ -443,7 +443,11 @@ typedef struct EventRicochet { uint16_t id; uint8_t owner; Vec2 pos, vel; } Even
 typedef struct EventColliderHit { uint16_t id; uint8_t owner; Vec2 pos, vel; } EventColliderHit;
 typedef struct EventGrenadeBounce { uint16_t id; uint8_t owner; Vec2 pos; } EventGrenadeBounce;
 typedef struct EventClusterSplit { uint16_t id; uint8_t owner; Vec2 pos; } EventClusterSplit;
-typedef struct EventBlood { uint8_t shooter, target; Vec2 pos, vel; } EventBlood;
+typedef struct EventBlood {
+    uint8_t shooter, target;
+    Vec2 pos, vel;
+    bool bloodless; // the hit's sound alone: a thrown knife in a teammate, friendly fire off
+} EventBlood;
 typedef struct EventExplosion { uint16_t id; uint8_t player; WeaponId weapon; Vec2 pos; float radius; } EventExplosion;
 
 // A bullet or blast of `shooter` wounded `target`: the damage computed, the skeleton

@@ -523,9 +523,19 @@ static bool body_collide(const Context *ctx, World *w, Bullet *b, uint16_t index
             if (!vec2_is_zero(push)) wound(ctx, events, b, ti, 0.0f, &pose, part, point, push, false); // the shove of the hit itself
             bullet_end(b, index, events, NULL);
             return true;
-        case BULLET_THROWN_KNIFE:
+        case BULLET_THROWN_KNIFE: {
+            // The hit's sound on whoever it meets, and its blood unless a teammate's with
+            // friendly fire off (Bullets.pas, THROWNKNIFE). Through a corpse it hits it once
+            // (hit_body), so it is heard once, as the original's SpriteCollisions has it.
+            bool friendly = !w->rules.friendly_fire && owner->team != TEAM_NONE && owner->team == live->team && ti != b->owner;
+            event_emit(events, (Event){.type = EVENT_BLOOD,
+                                       .blood = {.shooter = b->owner, .target = (uint8_t)ti, .pos = point, .vel = b->vel, .bloodless = friendly}});
             wound(ctx, events, b, ti, vec2_length(b->vel) * b->hit_multiply * 0.01f, &pose, part, point, push, false);
-            if (corpse) return true; // it goes through a corpse rather than sticking in it
+            if (corpse) { // it goes through a corpse rather than sticking in it
+                b->hit_body = (int8_t)ti;
+                return true;
+            }
+        }
             knife_land(b, events);
             shot_end_tell(w, b, point, 0, events);
             bullet_end(b, index, events, &point);
