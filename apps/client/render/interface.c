@@ -989,15 +989,16 @@ static void draw_chat_texts(const Frame *f, const HudData *d, const RenderState 
     for (int i = 0; i < MAX_PLAYERS; i++) {
         const HudPlayer *p = &d->players[i];
         const RenderSoldier *s = &state->soldiers[i];
-        if (!p->active || !s->active || (!p->typing && p->chat_delay <= 0)) continue;
+        bool typing = p->typing && d->typing_style > 0;
+        if (!p->active || !s->active || (!typing && p->chat_delay <= 0)) continue;
         Vec2 at = world_to_interface(f, s->pose.p[12 - 1]);
         float dy = -25;
-        if (p->typing) {
-            const char *dots = "...";
-            char str[4];
-            snprintf(str, sizeof(str), "%.*s", d->tick / 30 % 3 + 1, dots);
+        if (typing) { // the dots stepping one to three, after "Typing" if asked (ui_typing)
+            const char *full = d->typing_style == 2 ? "Typing..." : "...";
+            char str[16];
+            snprintf(str, sizeof(str), "%.*s", (int)strlen(full) - 2 + d->tick / 30 % 3, full);
             text_color(COLOR_ABOVECHAT);
-            text_draw(str, at.x - text_width(dots) / 2, at.y + dy);
+            text_draw(str, at.x - text_width(full) / 2, at.y + dy);
             dy -= 15;
         }
         if (p->chat_delay > 0 && strlen(p->chat) < MORECHATTEXT) {
@@ -1008,7 +1009,8 @@ static void draw_chat_texts(const Frame *f, const HudData *d, const RenderState 
     text_align(TEXT_TOP);
 }
 
-// A teammate's name, only when they are off the screen (or everyone's, watching).
+// A teammate's name, only when they are off the screen (or everyone's, watching, and with
+// ui_teamnames a teammate's always): by them, or held at the screen's edge.
 static void draw_player_name(const Frame *f, const HudData *d, const RenderState *state, int i, bool only_offscreen)
 {
     const HudPlayer *p = &d->players[i];
@@ -1038,7 +1040,7 @@ static void draw_player_names(const Frame *f, const HudData *d, const RenderStat
         const HudPlayer *p = &d->players[i];
         if (!p->active || !state->soldiers[i].active || p->spectator) continue;
         if (mine->spectator) draw_player_name(f, d, state, i, false);
-        else if (d->team_game && i != d->me && p->team == mine->team) draw_player_name(f, d, state, i, true);
+        else if (d->team_game && i != d->me && p->team == mine->team) draw_player_name(f, d, state, i, !d->team_names);
     }
 }
 

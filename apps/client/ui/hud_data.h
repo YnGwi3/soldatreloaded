@@ -189,6 +189,8 @@ typedef struct HudData {
     bool bullet_time;  // sv_bullettime slowing the game: the widescreen cut
     bool show_info;    // F5: the FPS and ping line
     bool player_names; // the original's PlayerNamesShow
+    bool team_names;   // ui_teamnames: teammates' names by them always, not only off the screen
+    int typing_style;  // ui_typing: 0 nothing over who is typing, 1 the original's dots, 2 "Typing..."
     int fps;
     double time; // seconds since the start, for what blinks and bobs
     int tick;    // the main tick counter, for what steps

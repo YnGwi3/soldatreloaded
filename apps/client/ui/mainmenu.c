@@ -2225,6 +2225,12 @@ static void page_options(Ui *ui)
     slider(ui, "Crosshair size", "cl_crosshair_size", 50, 200, 10, true, "%d%%");
     section(ui, "INTERFACE");
     toggle(ui, "Player names", "ui_playernames");
+    toggle(ui, "Teammates' names always", "ui_teamnames");
+    {
+        static const int STYLES[] = {0, 1, 2};
+        static const char *const STYLE_NAMES[] = {"Off", "Dots", "Typing..."};
+        cvar_select(ui, "Typing indicator", "ui_typing", STYLES, STYLE_NAMES, NULL, 3);
+    }
     toggle(ui, "Minimap", "ui_minimap");
     toggle(ui, "Follow scoped shot", "cl_trackshot");
     toggle(ui, "Show on Discord", "cl_discord");

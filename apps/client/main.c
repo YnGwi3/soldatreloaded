@@ -132,6 +132,7 @@ typedef struct App {
     Cvar *track_shot;     // cl_trackshot: the camera follows a scoped Barrett shot
     Cvar *forcebg, *forcebg_color1, *forcebg_color2; // the sky in colours of my own instead of the map's (r_forcebg)
     Cvar *minimap, *info, *player_names, *console_length;
+    Cvar *team_names, *typing_style; // ui_teamnames, ui_typing
     Cvar *player_name;
     Cvar *grenade_color;
     Cvar *cursor_color, *crosshair_color, *cursor_size, *crosshair_size;
@@ -1193,6 +1194,10 @@ static bool console_open(App *app, int argc, char *argv[])
     app->info = cvar_register(con, "ui_info", "0", CVAR_ARCHIVE, "the FPS and ping line");
     app->track_shot = cvar_register(con, "cl_trackshot", "1", CVAR_ARCHIVE, "the camera follows a Barrett shot fired scoped, until you stand up");
     app->player_names = cvar_register(con, "ui_playernames", "1", CVAR_ARCHIVE, "teammates' names at the screen's edge when out of view (everyone's, spectating), and the ping dot");
+    app->team_names = cvar_register(con, "ui_teamnames", "0", CVAR_ARCHIVE,
+                                    "1: teammates' names by them always, not only at the screen's edge when out of view (with ui_playernames)");
+    app->typing_style = cvar_register(con, "ui_typing", "1", CVAR_ARCHIVE,
+                                      "over a player typing: 0 nothing, 1 the original's dots, 2 \"Typing...\"");
     app->console_length =
         cvar_register(con, "ui_console_length", "6", CVAR_ARCHIVE, "how many console lines the HUD shows");
     app->discord_on = cvar_register(con, "cl_discord", "1", CVAR_ARCHIVE,
@@ -2057,6 +2062,8 @@ static void hud_data_build(App *app)
     d->minimap = app->minimap->integer != 0;
     d->show_info = app->info->integer != 0;
     d->player_names = app->player_names->integer != 0;
+    d->team_names = app->team_names->integer != 0;
+    d->typing_style = clampi(app->typing_style->integer, 0, 2);
 
     // the radio menu's columns: the calls, and the places of the call chosen
     int call = d->radio_state ? d->radio_state - 1 : 0;
