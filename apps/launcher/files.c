@@ -116,10 +116,15 @@ bool files_remove_empty_parent(const char *path)
     if (back && (!slash || back > slash)) slash = back;
     if (!slash || slash == dir) return false;
     *slash = '\0';
+    return files_remove_empty_directory(dir);
+}
+
+bool files_remove_empty_directory(const char *path)
+{
 #ifdef _WIN32
-    return _rmdir(dir) == 0;
+    return _rmdir(path) == 0;
 #else
-    return rmdir(dir) == 0;
+    return rmdir(path) == 0;
 #endif
 }
 

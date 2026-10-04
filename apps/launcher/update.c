@@ -366,6 +366,9 @@ static void remove_retired(const Manifest *installed, const Manifest *latest)
             remove(RETIRED[i]);
             files_remove_old(RETIRED[i]);
         }
+    // bin/, emptied by a launcher that couldn't take folders away (Linux's, finishing the
+    // update to the release that had none)
+    files_remove_empty_directory("bin");
 }
 
 UpdateOutcome update_run(const UpdateOptions *options, const UpdateReport *report, char *version, size_t version_size,

@@ -33,6 +33,8 @@ bool files_remove_tree(const char *path);
 // The directory `path` lies in, removed if it is empty (a release's folder it no longer
 // has, once its files are gone); false if it isn't, or couldn't be.
 bool files_remove_empty_parent(const char *path);
+// `path`, a directory, removed if it is empty; false if it isn't, or couldn't be.
+bool files_remove_empty_directory(const char *path);
 
 // `from` takes `to`'s place, replacing it. A file in use (the launcher itself, on
 // Windows) can't be replaced but can be moved, so it is moved to "<to>.old" first, and
