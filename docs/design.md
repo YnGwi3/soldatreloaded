@@ -389,7 +389,7 @@ the same way it hears of every other: joining and a new round are one path.
 
 ## Tests
 
-The simulation is tested as scenes (tests/test.c): a map loaded from runtime/data/, two
+The simulation is tested as scenes (tests/test.c): a map loaded from assets/data/, two
 soldiers placed, `game_tick` run with authority on scripted buttons, and the events
 tallied. Combat, corpses and things have their scenes; the passes' mail has
 events_test; the wire has its classification, round-trip and refusal tests; the join

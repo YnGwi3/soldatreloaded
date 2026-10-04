@@ -2,7 +2,7 @@
 -- keeps a player's copy up to date, and the tests.
 --
 --   xmake                the client, the server and the launcher
---   xmake run client     in runtime/, where data/, mods/, config/ and scripts/ are
+--   xmake run client     in assets/, where data/, mods/, config/ and scripts/ are
 --   xmake run server
 --   xmake test           the headless checks in tests/
 --   xmake dist           the packages, in build/release/: one for players, one for a server,
@@ -10,8 +10,8 @@
 --
 -- The game finds everything beside itself, in the directory it runs from: data/, what it
 -- plays by (maps, animations, skeletons, bots); mods/, what it looks and sounds like
--- (mods/default/ and a player's own beside it); config/ and scripts/. runtime/ holds them
--- as an install lays them out, so that is runtime/ under xmake run (set_rundir) and the
+-- (mods/default/ and a player's own beside it); config/ and scripts/. assets/ holds them
+-- as an install lays them out, so that is assets/ under xmake run (set_rundir) and the
 -- package's own directory once unpacked, and nothing is passed on the command line. What
 -- the game writes there as it plays (config/, demos/) and a player's mods are the
 -- player's, and not the project's.
@@ -48,31 +48,31 @@ add_requires("libcurl", {configs = {shared = false, mbedtls = not is_plat("windo
 -- whole or by range, and the deflate inside a tar.gz, as releases before had them.
 add_requires("miniz")
 
--- runtime/scripts/main.lua as a C string, main_lua.h: a server unpacked from its own package
+-- assets/scripts/main.lua as a C string, main_lua.h: a server unpacked from its own package
 -- makes scripts/main.lua from it where it is missing (apps/server/main.c), so the file
 -- the game's package ships is the one source of it. Written only when it changes.
 rule("main_lua")
     on_load(function (target)
-        local text = io.readfile(path.join(os.projectdir(), "runtime", "scripts", "main.lua")):gsub("\r", "")
+        local text = io.readfile(path.join(os.projectdir(), "assets", "scripts", "main.lua")):gsub("\r", "")
         local lines = {}
         for line in (text .. "\n"):gmatch("(.-)\n") do
             table.insert(lines, '    "' .. line:gsub("\\", "\\\\"):gsub('"', '\\"') .. '\\n"')
         end
         if lines[#lines] == '    "\\n"' then table.remove(lines) end -- the end of the file's last line
-        local header = "// Made by xmake.lua from runtime/scripts/main.lua.\nstatic const char MAIN_LUA[] =\n"
+        local header = "// Made by xmake.lua from assets/scripts/main.lua.\nstatic const char MAIN_LUA[] =\n"
                        .. table.concat(lines, "\n") .. ";\n"
         local out = path.join(target:autogendir(), "main_lua.h")
         if not os.isfile(out) or io.readfile(out) ~= header then io.writefile(out, header) end
         target:add("includedirs", target:autogendir())
     end)
 
--- The game's icon, runtime/data/icon.ico, built into an executable on Windows: the one
+-- The game's icon, assets/data/icon.ico, built into an executable on Windows: the one
 -- Explorer, the taskbar and the window show, as SDL takes a window's icon from the first
 -- in its executable. The resource script that names it is written here, at build time.
 rule("icon")
     on_load(function (target)
         if not target:is_plat("windows") then return end
-        local ico = path.join(os.projectdir(), "runtime", "data", "icon.ico"):gsub("\\", "/")
+        local ico = path.join(os.projectdir(), "assets", "data", "icon.ico"):gsub("\\", "/")
         local rc = path.join(target:autogendir(), "icon.rc")
         local text = ("1 ICON \"%s\"\n"):format(ico)
         -- written only when it changes: a new one relinks the executable, a new one each time
@@ -125,7 +125,7 @@ target("client")
             add_ldflags("/SUBSYSTEM:WINDOWS")
         end
     end
-    set_rundir("$(projectdir)/runtime")
+    set_rundir("$(projectdir)/assets")
 
 -- The game server, headless: the same simulation with authority, ticked on its own
 -- clock. Nothing but the console and the world until the netcode is ported.
@@ -148,7 +148,7 @@ target("server")
     if not is_plat("windows") then
         add_syslinks("pthread") -- the console's reader, the script's requests and the lobby's
     end
-    set_rundir("$(projectdir)/runtime")
+    set_rundir("$(projectdir)/assets")
 
 -- The launcher, what a player starts (launcher/main.c): it brings the install up to the
 -- latest release on GitHub, in a small window of its own, and starts the client. Its
@@ -209,7 +209,7 @@ target("tests")
 -- it unpacks (launcher/archive.h), so a package without it would scatter. A zip says where
 -- each file in it lies, so the launcher brings an update's files alone out of it, by range
 -- (launcher/update.h); on Linux it keeps the executables' bit, as Info-ZIP writes it. What
--- an install holds is runtime/'s data/, mods/default/ and scripts/, flat, which is how
+-- an install holds is assets/'s data/, mods/default/ and scripts/, flat, which is how
 -- the game expects to find them (docs/git.md, Releases); the game's package its config/ too.
 --
 --   soldatreloaded          the game, a player's: everything, the server among it so anyone
@@ -232,7 +232,7 @@ local function release_package(name, suffix, bindir)
         -- owner's: in the game's package, which the launcher leaves be once changed, and in
         -- the server's none, as unpacking a release over a server would put it back as it
         -- came; the server makes it there)
-        add_installfiles("runtime/(scripts/examples/**)")
+        add_installfiles("assets/(scripts/examples/**)")
 end
 
 -- What every package's install is given last, as xpack lays it out: version.txt, and on
@@ -299,21 +299,21 @@ end
 -- the windows' elsewhere, and a server has neither.
 release_package("soldatreloaded", "", "bin")
     add_targets("client", "server", "launcher")
-    add_installfiles("runtime/(data/**)|icon.ico|icon.png")
+    add_installfiles("assets/(data/**)|icon.ico|icon.png")
     if not is_plat("windows") then
-        add_installfiles("runtime/(data/icon.png)")
+        add_installfiles("assets/(data/icon.png)")
     end
-    add_installfiles("runtime/(mods/default/**)") -- the game's; a player's mods beside it are theirs
+    add_installfiles("assets/(mods/default/**)") -- the game's; a player's mods beside it are theirs
     -- the settings, at their defaults: the player's once changed, which the launcher then leaves
     -- be (launcher/update.h). Not in the server's package, unpacked over a server by hand: it
     -- makes its own there
-    add_installfiles("runtime/(config/*)")
-    add_installfiles("runtime/(scripts/main.lua)") -- the owner's once they change it (launcher/update.h)
+    add_installfiles("assets/(config/*)")
+    add_installfiles("assets/(scripts/main.lua)") -- the owner's once they change it (launcher/update.h)
     finish_install(true)
 
 release_package("soldatreloaded-server", "-server", ".")
     add_targets("server")
-    add_installfiles("runtime/(data/**)|icon.ico|icon.png")
+    add_installfiles("assets/(data/**)|icon.ico|icon.png")
     finish_install(false)
 
 -- xmake dist: the two packages, in build/release/, and latest-<plat>-<arch>.txt, the

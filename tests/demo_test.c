@@ -46,7 +46,7 @@ static void side_take(Side *s)
         side_free(s);
         s->g = calloc(1, sizeof(Game));
         if (!s->g || !context_load(&s->g->ctx, TEST_DATA, s->net.map)) {
-            printf("could not load map '%s' from runtime/data/\n", s->net.map);
+            printf("could not load map '%s' from assets/data/\n", s->net.map);
             exit(2);
         }
         MatchSettings settings = match_settings_for_map(s->g->ctx.map);

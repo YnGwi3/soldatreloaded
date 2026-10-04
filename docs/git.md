@@ -70,7 +70,7 @@ does not match is refused, so any release that changes the protocol will not tal
 the one before it. Say so in the tag's message, every time.
 
 A tag is the version; what ships beside it is the client, the server, the launcher and
-the contents of `runtime/` (`data/`, `mods/default/`, `config/` at its defaults and
+the contents of `assets/` (`data/`, `mods/default/`, `config/` at its defaults and
 `scripts/`), unpacked flat so that the art sits beside the executable: the packages
 `xmake dist` makes (see xmake.lua). The server's package leaves `config/` out, so
 unpacking a release over a server never touches its settings, lists or weapons mod; it

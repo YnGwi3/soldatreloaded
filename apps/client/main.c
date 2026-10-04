@@ -14,7 +14,7 @@
 // App; nothing else is global.
 //
 // The client runs from the directory that holds config/, data/ and mods/: the project's
-// runtime/ in development (xmake run starts it there) and the game's own once shipped, so
+// assets/ in development (xmake run starts it there) and the game's own once shipped, so
 // both are found by the same relative paths. data/ is what the game plays by, the same for
 // everyone in a game; mods/ what it looks and sounds like, mods/default/ and over it the
 // player's pick (mod.h). config/ holds the settings: the defaults are the code's, and

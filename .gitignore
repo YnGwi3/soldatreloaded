@@ -1,10 +1,10 @@
 build/
 .xmake
 *.exe
-# what the game writes as it plays from runtime/, and a player's mods: theirs, not the project's
-/runtime/demos/*
-!/runtime/demos/.gitkeep
-/runtime/mods/*
-!/runtime/mods/default/
-/runtime/config.cfg
-/runtime/config.cfg.old
+# what the game writes as it plays from assets/, and a player's mods: theirs, not the project's
+/assets/demos/*
+!/assets/demos/.gitkeep
+/assets/mods/*
+!/assets/mods/default/
+/assets/config.cfg
+/assets/config.cfg.old

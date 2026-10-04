@@ -27,7 +27,7 @@
 #include "rounds.h"
 #include "weapons_ini.h"
 #include "files.h" // the launcher's, to find the install from bin/
-#include "main_lua.h" // runtime/scripts/main.lua, made into a string by xmake.lua
+#include "main_lua.h" // assets/scripts/main.lua, made into a string by xmake.lua
 #include "http.h"
 #include "lobby.h"
 #include "script.h"

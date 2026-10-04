@@ -125,8 +125,8 @@ static void weapons_ini_tests(void)
     remove(path);
 
     memcpy(read, base, sizeof read);
-    int found = weapons_ini_read("runtime/config/weapons.ini", read, name, sizeof name, NULL, NULL)
-                    ? ini_matches("runtime/config/weapons.ini", read) : -1;
+    int found = weapons_ini_read("assets/config/weapons.ini", read, name, sizeof name, NULL, NULL)
+                    ? ini_matches("assets/config/weapons.ini", read) : -1;
     CHECK(found == 20 * WEAPON_FIELD_COUNT, "the shipped weapons.ini (%s) gives every number as it has it (%d)", name, found);
 }
 

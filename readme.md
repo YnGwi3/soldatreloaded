@@ -150,13 +150,13 @@ headers, which have to be installed first (the list is in
 
 ```
 xmake              # the client, the server and the launcher
-xmake run client   # play, in runtime/
+xmake run client   # play, in assets/
 xmake run server   # a dedicated server
 xmake test         # the headless tests
 xmake dist         # the release packages, into build/release/
 ```
 
-The game finds `data/`, `mods/`, `config/` and `scripts/` in the directory it runs from: `runtime/`
+The game finds `data/`, `mods/`, `config/` and `scripts/` in the directory it runs from: `assets/`
 under `xmake run`, which holds them as an install lays them out, or an unpacked package.
 
 ## How it's put together
@@ -168,7 +168,7 @@ under `xmake run`, which holds them as an install lays them out, or an unpacked 
 | `apps/server/` | The headless server: connections, rounds, bots, votes, the Lua scripting and the lobby heartbeat. |
 | `apps/launcher/` | The updater: fetches the newest release from GitHub, brings only the files that changed, by the rules in [The install](#the-install), and starts the game. |
 | `tests/` | Headless checks of the simulation on real maps and of the netcode over the loopback. |
-| `runtime/` | What ships beside the executables, laid out as an install (see [The install](#the-install)): `data/`, the maps, animations, skeletons and bots the game plays by, and `mods/default/`, the art, sounds and fonts it looks and sounds like, both from [opensoldat/base](https://github.com/opensoldat/base); `config/` at its defaults; `scripts/`, the server's Lua scripts. What you add there as you play (`demos/`, a mod beside `mods/default/`) git leaves out. |
+| `assets/` | What ships beside the executables, laid out as an install (see [The install](#the-install)): `data/`, the maps, animations, skeletons and bots the game plays by, and `mods/default/`, the art, sounds and fonts it looks and sounds like, both from [opensoldat/base](https://github.com/opensoldat/base); `config/` at its defaults; `scripts/`, the server's Lua scripts. What you add there as you play (`demos/`, a mod beside `mods/default/`) git leaves out. |
 | `docs/` | How it works and how to work on it. |
 
 The docs go deeper:
@@ -198,7 +198,7 @@ in its description what it changes in play.
 ## Licence
 
 The code is under the MIT licence: [license.md](license.md). The game's content in
-`runtime/data/` and `runtime/mods/default/` is OpenSoldat's, under CC BY 4.0, with a few
-exceptions such as the menu's fonts; [runtime/data/NOTICE.md](runtime/data/NOTICE.md) and
-[runtime/mods/default/NOTICE.md](runtime/mods/default/NOTICE.md) have the details and the
+`assets/data/` and `assets/mods/default/` is OpenSoldat's, under CC BY 4.0, with a few
+exceptions such as the menu's fonts; [assets/data/NOTICE.md](assets/data/NOTICE.md) and
+[assets/mods/default/NOTICE.md](assets/mods/default/NOTICE.md) have the details and the
 credits.
