@@ -306,6 +306,12 @@ static void trigger(const Context *ctx, World *w, uint8_t index, Events *events)
     // crouched behind cover, the gun comes up before it fires
     if (body->id == ANIM_HANDS_UP_AIM && body->frame != 11) return;
 
+    // Fire breaks off a knife being thrown by starting the punch, which spawn protection
+    // holds back, so just spawned a throw couldn't be stopped (the original's too). It is
+    // broken off here by standing, not punching: the punch's stab would hurt.
+    if ((s->controls & BUTTON_FIRE) && s->cease_fire_counter >= 0 && weapon->id == WEAPON_KNIFE && body->id == ANIM_THROW_WEAPON) {
+        anim_apply(ctx->anims, body, ANIM_STAND, 1);
+    }
     if (!(s->controls & BUTTON_FIRE) || s->cease_fire_counter >= 0) {
         weapon->startup_count = stats->startup;
         return;
