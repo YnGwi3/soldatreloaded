@@ -49,7 +49,7 @@ add_requires("libcurl", {configs = {shared = false, mbedtls = not is_plat("windo
 add_requires("miniz")
 
 -- runtime/scripts/main.lua as a C string, main_lua.h: a server unpacked from its own package
--- makes scripts/main.lua from it where it is missing (packages/server/main.c), so the file
+-- makes scripts/main.lua from it where it is missing (apps/server/main.c), so the file
 -- the game's package ships is the one source of it. Written only when it changes.
 rule("main_lua")
     on_load(function (target)
@@ -84,8 +84,8 @@ rule("icon")
 -- rendering, audio or networking dependencies.
 target("shared")
     set_kind("static")
-    add_files("packages/shared/**.c")
-    add_includedirs("packages/shared", {public = true})
+    add_files("apps/shared/**.c")
+    add_includedirs("apps/shared", {public = true})
     add_packages("enet", {public = true}) -- the transport (shared/network) is ENet's
     if not is_plat("windows") then
         add_syslinks("m", {public = true})
@@ -100,10 +100,10 @@ target("client")
     add_rules("icon")
     add_deps("shared")
     -- the hosting settings, which Local Play sets for the server it starts (net/local_server.c)
-    add_files("packages/client/**.c", "packages/server/host_cvars.c")
+    add_files("apps/client/**.c", "apps/server/host_cvars.c")
     -- the launcher's HTTPS, for the server browser's list from the lobby (client/net/browser.c)
-    add_files("packages/launcher/http.c", "packages/launcher/files.c", "packages/launcher/sha256.c")
-    add_includedirs("packages/client", "packages/server", "packages/launcher")
+    add_files("apps/launcher/http.c", "apps/launcher/files.c", "apps/launcher/sha256.c")
+    add_includedirs("apps/client", "apps/server", "apps/launcher")
     add_packages("libsdl2", "stb", "libcurl")
     if is_plat("windows") then
         add_syslinks("advapi32") -- the machine's ID, for its hardware ID (client/net/hwid.c)
@@ -134,11 +134,11 @@ target("server")
     add_rules("main_lua")
     set_kind("binary")
     add_deps("shared")
-    add_files("packages/server/**.c")
+    add_files("apps/server/**.c")
     -- the launcher's HTTPS, for the lobby's heartbeat (server/lobby.c): it finds Linux's
     -- certificates for curl's mbedTLS
-    add_files("packages/launcher/http.c", "packages/launcher/files.c", "packages/launcher/sha256.c")
-    add_includedirs("packages/server", "packages/launcher")
+    add_files("apps/launcher/http.c", "apps/launcher/files.c", "apps/launcher/sha256.c")
+    add_includedirs("apps/server", "apps/launcher")
     add_packages("lua", "libcurl")
     -- the version its requests say
     on_load(function (target)
@@ -158,8 +158,8 @@ target("launcher")
     set_kind("binary")
     add_rules("icon")
     set_basename(is_plat("windows") and "Soldat Reloaded" or "soldatreloaded-launcher")
-    add_files("packages/launcher/*.c")
-    add_includedirs("packages/launcher")
+    add_files("apps/launcher/*.c")
+    add_includedirs("apps/launcher")
     add_packages("libsdl2", "stb", "libcurl", "miniz")
     add_defines('SOLDATRELOADED_RELEASES="https://github.com/soldatreloaded/soldatreloaded/releases"')
     -- the version it says, and the platform whose manifest it asks for (latest-windows-x64.txt)
@@ -186,15 +186,15 @@ target("tests")
     set_kind("binary")
     set_default(false)
     add_deps("shared")
-    add_files("tests/*.c", "packages/server/connections.c", "packages/server/lists.c", "packages/server/rounds.c",
-              "packages/server/bots.c", "packages/server/host.c", "packages/server/script.c", "packages/server/lobby.c",
-              "packages/server/host_cvars.c", "packages/server/weapons_ini.c")
-    add_files("packages/launcher/*.c|main.c")
+    add_files("tests/*.c", "apps/server/connections.c", "apps/server/lists.c", "apps/server/rounds.c",
+              "apps/server/bots.c", "apps/server/host.c", "apps/server/script.c", "apps/server/lobby.c",
+              "apps/server/host_cvars.c", "apps/server/weapons_ini.c")
+    add_files("apps/launcher/*.c|main.c")
     -- the client's line and its demos, for the demo's round trip (tests/demo_test.c),
     -- and its taunts, for the taunt editor's round trip (tests/taunts_test.c)
-    add_files("packages/client/net/client_net.c", "packages/client/net/demo.c", "packages/client/net/hwid.c",
-              "packages/client/ui/taunts.c")
-    add_includedirs("tests", "packages/server", "packages/launcher", "packages/client")
+    add_files("apps/client/net/client_net.c", "apps/client/net/demo.c", "apps/client/net/hwid.c",
+              "apps/client/ui/taunts.c")
+    add_includedirs("tests", "apps/server", "apps/launcher", "apps/client")
     add_packages("lua", "libcurl", "miniz")
     if is_plat("windows") then
         add_syslinks("advapi32") -- the machine's ID, for its hardware ID (client/net/hwid.c)

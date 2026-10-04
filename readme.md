@@ -163,10 +163,10 @@ under `xmake run`, which holds them as an install lays them out, or an unpacked 
 
 | | |
 |---|---|
-| `packages/shared/` | The simulation (`game/`), the maps, animations and skeletons it reads (`resources/`), the wire (`network/`), the console and the utilities. Built into both the client and the server, so both run the same game. |
-| `packages/client/` | The window, input, rendering (OpenGL 2.1), audio, the HUD and menus, and the client's end of the netcode. |
-| `packages/server/` | The headless server: connections, rounds, bots, votes, the Lua scripting and the lobby heartbeat. |
-| `packages/launcher/` | The updater: fetches the newest release from GitHub, brings only the files that changed, by the rules in [The install](#the-install), and starts the game. |
+| `apps/shared/` | The simulation (`game/`), the maps, animations and skeletons it reads (`resources/`), the wire (`network/`), the console and the utilities. Built into both the client and the server, so both run the same game. |
+| `apps/client/` | The window, input, rendering (OpenGL 2.1), audio, the HUD and menus, and the client's end of the netcode. |
+| `apps/server/` | The headless server: connections, rounds, bots, votes, the Lua scripting and the lobby heartbeat. |
+| `apps/launcher/` | The updater: fetches the newest release from GitHub, brings only the files that changed, by the rules in [The install](#the-install), and starts the game. |
 | `tests/` | Headless checks of the simulation on real maps and of the netcode over the loopback. |
 | `runtime/` | What ships beside the executables, laid out as an install (see [The install](#the-install)): `data/`, the maps, animations, skeletons and bots the game plays by, and `mods/default/`, the art, sounds and fonts it looks and sounds like, both from [opensoldat/base](https://github.com/opensoldat/base); `config/` at its defaults; `scripts/`, the server's Lua scripts. What you add there as you play (`demos/`, a mod beside `mods/default/`) git leaves out. |
 | `docs/` | How it works and how to work on it. |
