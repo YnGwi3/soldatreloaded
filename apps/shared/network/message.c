@@ -102,6 +102,7 @@ void msg_chat(NetBuf *b, MsgChat *m)
     net_range(b, &slot, MAX_PLAYERS); // MAX_PLAYERS: the server
     m->slot = (uint8_t)slot;
     net_bool(b, &m->team);
+    net_bool(b, &m->taunt);
     uint32_t kind = m->kind;
     net_range(b, &kind, CHAT_KINDS - 1);
     m->kind = (uint8_t)kind;

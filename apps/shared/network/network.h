@@ -265,6 +265,7 @@ typedef enum ChatKind {
 typedef struct MsgChat {
     uint8_t slot; // who said it; MAX_PLAYERS for the server, whose lines are of `kind`
     bool team;    // a player's, to its team alone
+    bool taunt;   // a player's said by a bind (a taunt, a radio call), not typed: heard through a mute
     uint8_t kind; // the server's (ChatKind); nothing for a player's
     Rgba color;   // a script line's own colour, carried for CHAT_SCRIPT alone; alpha 0 for the script colour
     char text[NET_TEXT_SIZE];

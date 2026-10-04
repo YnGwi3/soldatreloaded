@@ -183,6 +183,7 @@ int main(void)
     lists_tests();
     weapons_mod_tests();
     mapfile_tests();
+    mutes_tests();
     printf("%d checks, %d failed\n", checks, failures);
     return failures != 0;
 }

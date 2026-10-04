@@ -243,7 +243,7 @@ static void make_missing(const Lists *l)
     path_of(l, ADMINS, path, sizeof path);
     if (files_exists(path)) return;
     FILE *f = begin_file(l, ADMINS,
-                         "// The admins, by address: they may /kick, /ban, /mute and /map from the chat (and /admins,\n"
+                         "// The admins, by address: they may /kick, /ban, /servermute and /map from the chat (and /admins,\n"
                          "// /bans, /mutes to list them). The server only reads this file, as it starts. A player\n"
                          "// may also be an admin until they leave by saying /login with sv_adminpassword.\n"
                          "//\n"

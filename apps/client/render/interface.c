@@ -153,6 +153,7 @@ void interface_load(Interface *hud, const Mod *mod, const ScaleData *scales)
     hud_sprite_load(&hud->flag, mod, scales, "flag.png");
     hud_sprite_load(&hud->bot, mod, scales, "bot.png");
     hud_sprite_load(&hud->connection, mod, scales, "connection.png");
+    hud_sprite_load(&hud->mute, mod, scales, "mute.png");
     for (int i = 0; i < WEAPON_COUNT; i++) {
         if (GUN_ICONS[i]) hud_sprite_load(&hud->guns[i], mod, scales, GUN_ICONS[i]);
     }
@@ -164,7 +165,8 @@ void interface_unload(Interface *hud)
                         &hud->reload_bar, &hud->vest_bar, &hud->fire_bar, &hud->fire_bar_r, &hud->nade,
                         &hud->cluster_nade, &hud->dot,    &hud->cursor,   &hud->back,       &hud->noflag,
                         &hud->arrow,    &hud->scroll,   &hud->menucursor, &hud->smalldot, &hud->overlay,
-                        &hud->sight,    &hud->deaddot,  &hud->flag,       &hud->bot,      &hud->connection};
+                        &hud->sight,    &hud->deaddot,  &hud->flag,       &hud->bot,      &hud->connection,
+                        &hud->mute};
     for (size_t i = 0; i < sizeof(all) / sizeof(all[0]); i++) gfx_texture_delete(&all[i]->tex);
     for (int i = 0; i < WEAPON_COUNT; i++) gfx_texture_delete(&hud->guns[i].tex);
     *hud = (Interface){0};
@@ -581,6 +583,7 @@ static float draw_frags_background(const Interface *hud, const Frame *f, const H
         if (ranked[j] == d->me) draw_sprite(&hud->smalldot, pixel_align(f, 31 + f->fragx), pixel_align(f, row + 1), 0, mark);
         if (p->flags > 0 && !p->spectator) draw_sprite(&hud->flag, pixel_align(f, f->fragx + 337), pixel_align(f, row - 1), 0, mark);
         if (p->bot) draw_sprite(&hud->bot, pixel_align(f, f->fragx + 534), pixel_align(f, row), 0, mark);
+        if (p->muted) draw_sprite(&hud->mute, pixel_align(f, f->fragx + 246), pixel_align(f, row - 1), 0, mark); // the original's mute sign
         // the original colours it by its ConnectionQuality, which no packet carries here;
         // the ping stands in: whole up to 50 ms, gone by 350
         int quality = clampi(100 - (p->ping - 50) / 3, 0, 100);

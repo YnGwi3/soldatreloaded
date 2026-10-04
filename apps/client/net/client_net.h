@@ -109,5 +109,6 @@ void client_net_play(ClientNet *n, int slot);
 // A message as the line would bring it, heard as one.
 void client_net_feed(ClientNet *n, Console *con, Game *g, const uint8_t *data, size_t size);
 
-// A line of chat to the server, which relays it. False if not joined.
-bool client_net_say(ClientNet *n, const char *text, bool team);
+// A line of chat to the server, which relays it; `taunt` for one a bind said (a taunt, a
+// radio call), which a player's mute lets through. False if not joined.
+bool client_net_say(ClientNet *n, const char *text, bool team, bool taunt);

@@ -1051,6 +1051,10 @@ bool connections_admin(Connections *c, Game *g, int from, const char *text)
     const char *rest = text;
     char word[32], arg[NET_TEXT_SIZE];
     next_word(&rest, word, sizeof word);
+    // In the chat /mute and /unmute are a player's own, kept by their client (the original's),
+    // so an admin's, for everyone, are /servermute and /serverunmute; the console's are both.
+    if (strcmp(word, "servermute") == 0) snprintf(word, sizeof word, "mute");
+    else if (strcmp(word, "serverunmute") == 0) snprintf(word, sizeof word, "unmute");
 
     if (strcmp(word, "login") == 0) { // sv_adminpassword, said by a player
         if (from < 0) return true;

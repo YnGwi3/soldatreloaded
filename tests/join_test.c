@@ -292,11 +292,11 @@ void join_tests(void)
     CHECK(p.welcomed && strcmp(conns.items[p.welcome.slot].hwid, "FFFFFFFFFFF") == 0,
           "and is welcomed, the server keeping its hardware ID (welcomed %d: %s)", p.welcomed, p.denial.reason);
     char mute[32];
-    snprintf(mute, sizeof mute, "mute %d", p.welcome.slot);
+    snprintf(mute, sizeof mute, "servermute %d", p.welcome.slot); // an admin's, in the chat /servermute
     CHECK(connections_admin(&conns, NULL, -1, mute) && conns.lists.mute_count == 1 &&
               strcmp(conns.lists.mutes[0].hwid, "FFFFFFFFFFF") == 0,
-          "a player muted is muted by their machine too");
-    connections_admin(&conns, NULL, -1, "unmute FFFFFFFFFFF");
+          "a player muted (servermute) is muted by their machine too");
+    connections_admin(&conns, NULL, -1, "serverunmute FFFFFFFFFFF");
     connections_admin(&conns, NULL, -1, "unban 0A1B2C3D4E5");
     CHECK(conns.lists.mute_count == 0 && conns.lists.ban_count == 0, "and unmuted and unbanned by hardware ID");
     net_close(&p.link);

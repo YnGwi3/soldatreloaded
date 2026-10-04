@@ -74,6 +74,7 @@
 #include "ui/feed.h"
 #include "ui/mainmenu.h"
 #include "ui/menus.h"
+#include "ui/mutes.h"
 
 #ifndef SOLDATRELOADED_VERSION
 #define SOLDATRELOADED_VERSION "dev" // xmake.lua sets it from set_version
@@ -84,6 +85,7 @@
 // back into them what changes as it runs (config_save), as it closes.
 
 #define CONFIG_CLIENT "config/client.cfg"     // the game's settings and keys, written as it closes
+#define CONFIG_MUTES "config/mutes.txt"       // the players I have muted (ui/mutes.h), written as they are
 #define CONFIG_OLD "config.cfg" // before config/: the one file, read once and moved aside
 #define SCREENSHOT_FRAME 60
 #define RADIO_CALLS 3  // the radio menu's first choices, and each one's second choices
@@ -204,6 +206,8 @@ typedef struct App {
     HudChatType chat_last_type;
     char chat_aside[HUD_TEXT]; // the line a click closed the prompt on, back as the same prompt opens
     HudChatType chat_aside_type; // (the original's FireChatText)
+    Mutes mutes;              // the players I have muted, by name (ui/mutes.h), kept in CONFIG_MUTES
+    Cvar *mute_all, *mute_team, *mute_enemies, *mute_specs; // and the kinds of chat I have
     Consoles consoles;        // the HUD's two consoles, fed from the game console's scrollback
     int console_scroll;       // how far back the big console is paged while a line is typed
     bool vote_reason_typing;  // the prompt takes a kick vote's reason (the kick window's OK)
@@ -345,6 +349,7 @@ static void cmd_screenshot(Console *con, int argc, char **argv, void *user)
 #define MAX_CHATDELAY (7 * 60 + 40)
 
 static void player_name(const App *app, int i, char *name, size_t size);
+static bool team_game(const App *app);
 
 // A line of chat heard, from `slot` (MAX_PLAYERS for the server itself), placed as the
 // original's ClientHandleChatMessage places it: to the console as "[Name] text" in the
@@ -367,7 +372,7 @@ static Rgba chat_kind_color(ChatKind kind)
 }
 
 // `own` is a script line's own colour, when it chose one (alpha above 0).
-static void chat_heard(App *app, int slot, bool team, ChatKind kind, Rgba own, const char *text)
+static void chat_heard(App *app, int slot, bool team, bool taunt, ChatKind kind, Rgba own, const char *text)
 {
     Console *con = app->console;
     if (slot == MAX_PLAYERS) {
@@ -378,6 +383,12 @@ static void chat_heard(App *app, int slot, bool team, ChatKind kind, Rgba own, c
     }
     char name[HUD_NAME];
     player_name(app, slot, name, sizeof name);
+    // what I have muted doesn't reach my screen (ui/mutes.h); my own lines always do
+    MuteKinds kinds = {app->mute_all->integer != 0, app->mute_team->integer != 0, app->mute_enemies->integer != 0,
+                       app->mute_specs->integer != 0};
+    if (slot != app->me && mutes_hide(&app->mutes, kinds, name, app->game->world.soldiers[slot].team,
+                                      app->game->world.soldiers[app->me].team, team_game(app), taunt))
+        return;
     bool spectator = app->game->world.soldiers[slot].team == TEAM_SPECTATOR;
     // A radio call (NetworkClientMessages.pas): team chat that begins '*', the call and
     // the place, said as (RADIO) without them, its words over the head as any chat's;
@@ -422,7 +433,7 @@ static void vote_said(App *app, const char *text)
     }
 }
 
-static void say(App *app, bool team, const char *text)
+static void say(App *app, bool team, bool taunt, const char *text)
 {
     if (!text[0]) return;
     // F12 and F11 (ControlGame.pas): an answer to the vote's box, while it is up. A yes
@@ -434,8 +445,8 @@ static void say(App *app, bool team, const char *text)
         if (strcmp(text, "/no") == 0) return;
     }
     if (text[0] == '/' && client_net_joined(&app->net)) vote_said(app, text);
-    if (client_net_say(&app->net, text, team)) return;
-    chat_heard(app, app->me, team, CHAT_SERVER, (Rgba){0}, text);
+    if (client_net_say(&app->net, text, team, taunt)) return;
+    chat_heard(app, app->me, team, taunt, CHAT_SERVER, (Rgba){0}, text);
 }
 
 // say <text...> / say_team <text...>: chat, as a command (the taunt binds use it).
@@ -454,11 +465,119 @@ static void cmd_say(Console *con, int argc, char **argv, void *user)
         if (w < 0) break;
         n += (size_t)w; // past the end once it is full, and the loop ends
     }
-    say(app, strcmp(argv[0], "say_team") == 0, text);
+    say(app, strcmp(argv[0], "say_team") == 0, true, text); // a bind's: a taunt, a radio call
 }
 
 // votemap <map> / votekick <player>: a vote, which is a command said in the chat for
 // the server to read; /yes and /no answer it (F12 and F11).
+// The rest of a command's words, joined: a name with spaces in it.
+static void words_from(int argc, char **argv, int first, char *out, size_t size)
+{
+    out[0] = '\0';
+    for (int i = first; i < argc; i++) {
+        size_t used = strlen(out);
+        snprintf(out + used, size - used, "%s%s", i > first ? " " : "", argv[i]);
+    }
+}
+
+// The player a /mute names: by slot number, by name in any case, or by the start of one
+// name alone. -1 for nobody here.
+static int player_called(const App *app, const char *said)
+{
+    char *end;
+    long n = strtol(said, &end, 10);
+    if (*said && !*end) return n >= 0 && n < MAX_PLAYERS && app->game->world.soldiers[n].active ? (int)n : -1;
+    int found = -1, starts = 0;
+    for (int i = 0; i < MAX_PLAYERS; i++) {
+        if (!app->game->world.soldiers[i].active) continue;
+        char name[HUD_NAME];
+        player_name(app, i, name, sizeof name);
+        if (!name[0]) continue;
+        size_t k = 0;
+        while (said[k] && tolower((unsigned char)said[k]) == tolower((unsigned char)name[k])) k++;
+        if (said[k]) continue;
+        if (!name[k]) return i; // the whole name
+        found = i;
+        starts++;
+    }
+    return starts == 1 ? found : -1;
+}
+
+// mute <player>, unmute <player>: their chat kept off my screen, or let back, kept in
+// CONFIG_MUTES past a rejoin (ui/mutes.h); a player not here is taken by the name as said.
+// `mute all` is muteall, as the original's; `unmute all` lifts every mute.
+static void cmd_mute(Console *con, int argc, char **argv, void *user)
+{
+    App *app = user;
+    bool mute = strcmp(argv[0], "mute") == 0;
+    if (argc < 2) {
+        console_print(con, "usage: %s <name or slot | all>\n", argv[0]);
+        return;
+    }
+    char said[NET_NAME_SIZE * 2];
+    words_from(argc, argv, 1, said, sizeof said);
+    if (strcmp(said, "all") == 0) {
+        if (mute) {
+            console_execute(con, "muteall");
+            return;
+        }
+        app->mutes.count = 0;
+        cvar_set(con, "cl_muteall", "0");
+        cvar_set(con, "cl_muteteam", "0");
+        cvar_set(con, "cl_muteenemies", "0");
+        cvar_set(con, "cl_mutespecs", "0");
+        mutes_save(&app->mutes, CONFIG_MUTES);
+        console_print_color(con, HUD_COLOR_CLIENT, "Everyone is unmuted\n");
+        return;
+    }
+    char name[HUD_NAME];
+    int slot = player_called(app, said);
+    if (slot >= 0) player_name(app, slot, name, sizeof name);
+    else snprintf(name, sizeof name, "%s", said);
+    bool changed = mute ? mutes_add(&app->mutes, name) : mutes_remove(&app->mutes, name);
+    if (changed) mutes_save(&app->mutes, CONFIG_MUTES);
+    if (mute) console_print_color(con, HUD_COLOR_CLIENT, changed ? "%s is muted\n" : "%s was muted already\n", name);
+    else console_print_color(con, HUD_COLOR_CLIENT, changed ? "%s is unmuted\n" : "%s wasn't muted\n", name);
+}
+
+// muteall, muteteam, muteenemies, mutespecs: a kind of chat kept off my screen, or let
+// back (the cvars cl_mute*). Taunts and radio calls come through but a spectator's.
+static void cmd_mute_kind(Console *con, int argc, char **argv, void *user)
+{
+    App *app = user;
+    (void)argc;
+    static const struct {
+        const char *command, *cvar, *who;
+    } KINDS[] = {{"muteall", "cl_muteall", "Everyone's chat"},
+                 {"muteteam", "cl_muteteam", "Your team's chat"},
+                 {"muteenemies", "cl_muteenemies", "The enemies' chat"},
+                 {"mutespecs", "cl_mutespecs", "The spectators' chat"}};
+    for (size_t i = 0; i < sizeof KINDS / sizeof KINDS[0]; i++) {
+        if (strcmp(argv[0], KINDS[i].command) != 0) continue;
+        const Cvar *cv = cvar_find(con, KINDS[i].cvar);
+        bool on = !(cv && cv->integer);
+        cvar_set(con, KINDS[i].cvar, on ? "1" : "0");
+        console_print_color(con, HUD_COLOR_CLIENT, "%s is %s%s\n", KINDS[i].who, on ? "muted" : "unmuted",
+                            on && i < 3 ? " (but for taunts)" : "");
+    }
+    (void)app;
+}
+
+// mutes: what I have muted.
+static void cmd_mutes(Console *con, int argc, char **argv, void *user)
+{
+    App *app = user;
+    (void)argc;
+    (void)argv;
+    const char *kinds[] = {"cl_muteall", "cl_muteteam", "cl_muteenemies", "cl_mutespecs"};
+    for (size_t i = 0; i < sizeof kinds / sizeof kinds[0]; i++) {
+        const Cvar *cv = cvar_find(con, kinds[i]);
+        if (cv && cv->integer) console_print_color(con, HUD_COLOR_CLIENT, "%s 1\n", kinds[i]);
+    }
+    for (int i = 0; i < app->mutes.count; i++) console_print_color(con, HUD_COLOR_CLIENT, "muted: %s\n", app->mutes.names[i]);
+    if (app->mutes.count == 0) console_print_color(con, HUD_COLOR_CLIENT, "No players muted\n");
+}
+
 static void cmd_vote(Console *con, int argc, char **argv, void *user)
 {
     App *app = user;
@@ -468,7 +587,7 @@ static void cmd_vote(Console *con, int argc, char **argv, void *user)
     }
     char text[HUD_TEXT];
     snprintf(text, sizeof text, "/%s %s", argv[0], argv[1]);
-    say(app, false, text);
+    say(app, false, false, text);
 }
 
 // The prompt (ControlGame.pas StartChat, ClearChatText). Its text begins with the
@@ -574,7 +693,7 @@ static void chat_send(App *app)
         if (strlen(line) > 3) {
             char text[HUD_TEXT];
             snprintf(text, sizeof text, "/votekick %d %.*s", app->kick_target, NET_REASON_SIZE - 1, line);
-            say(app, false, text);
+            say(app, false, false, text);
         }
         return;
     }
@@ -582,10 +701,10 @@ static void chat_send(App *app)
         char word[HUD_TEXT] = "";
         sscanf(line + 1, "%159s", word);
         if (word[0] && console_knows(app->console, word)) console_execute(app->console, line + 1);
-        else if (word[0]) say(app, false, line);
+        else if (word[0]) say(app, false, false, line);
         return;
     }
-    if (line[1]) say(app, type == HUD_CHAT_TEAM, line + 1);
+    if (line[1]) say(app, type == HUD_CHAT_TEAM, false, line + 1);
 }
 
 // Text into the prompt at the cursor, as much as fits.
@@ -1209,6 +1328,12 @@ static bool console_open(App *app, int argc, char *argv[])
                                      "the kill console's lines, two a kill, 0 to 50; 0 shows none");
     app->kill_position = cvar_register(con, "ui_killconsole_pos", "0", CVAR_ARCHIVE,
                                        "where the kill console is: 0 top right (the original's), 1 lower on the right, 2 top left, under the chat");
+    // what I have muted (ui/mutes.h): the kinds of chat, and the players by name
+    app->mute_all = cvar_register(con, "cl_muteall", "0", CVAR_ARCHIVE, "1: everyone's chat is kept off your screen, but for taunts (muteall)");
+    app->mute_team = cvar_register(con, "cl_muteteam", "0", CVAR_ARCHIVE, "1: your team's chat is kept off your screen, but for taunts (muteteam)");
+    app->mute_enemies = cvar_register(con, "cl_muteenemies", "0", CVAR_ARCHIVE, "1: the enemies' chat is kept off your screen, but for taunts (muteenemies)");
+    app->mute_specs = cvar_register(con, "cl_mutespecs", "0", CVAR_ARCHIVE, "1: the spectators' chat is kept off your screen, taunts too (mutespecs)");
+    mutes_load(&app->mutes, CONFIG_MUTES);
     app->console_length =
         cvar_register(con, "ui_console_length", "6", CVAR_ARCHIVE, "how many console lines the HUD shows");
     app->discord_on = cvar_register(con, "cl_discord", "1", CVAR_ARCHIVE,
@@ -1278,6 +1403,13 @@ static bool console_open(App *app, int argc, char *argv[])
     console_add_command(con, "say", cmd_say, app, "say something to everyone");
     console_add_command(con, "say_team", cmd_say, app, "say something to the team");
     console_add_command(con, "radio", cmd_radio_call, app, "say a radio call: radio <call> <place>, 1 to 3 each");
+    console_add_command(con, "mute", cmd_mute, app, "keep a player's chat off your screen, but for taunts, until unmuted: mute <name or slot | all>");
+    console_add_command(con, "unmute", cmd_mute, app, "let a player's chat back: unmute <name or slot | all>");
+    console_add_command(con, "muteall", cmd_mute_kind, app, "keep everyone's chat off your screen, but for taunts; again to let it back");
+    console_add_command(con, "muteteam", cmd_mute_kind, app, "keep your team's chat off your screen, but for taunts; again to let it back");
+    console_add_command(con, "muteenemies", cmd_mute_kind, app, "keep the enemies' chat off your screen, but for taunts; again to let it back");
+    console_add_command(con, "mutespecs", cmd_mute_kind, app, "keep the spectators' chat off your screen, taunts too; again to let it back");
+    console_add_command(con, "mutes", cmd_mutes, app, "what you have muted");
     console_add_command(con, "chat", cmd_chat, app, "type a line to everyone");
     console_add_command(con, "teamchat", cmd_chat, app, "type a line to the team");
     console_add_command(con, "cmd", cmd_chat, app, "type a command: a cvar or command here, or a word for the server");
@@ -1863,13 +1995,13 @@ static void apply_menu_action(App *app, MenuAction action)
             if (app->map_count == 0) break;
             snprintf(text, sizeof text, "/votemap %s", app->maps[clampi(action.value, 0, app->map_count - 1)]);
         }
-        say(app, false, text);
+        say(app, false, false, text);
         break;
     }
     case MENU_ACTION_PICK_TEAM: { // the server places me on it, or among the watchers
         char text[HUD_TEXT];
         snprintf(text, sizeof text, "/team %d", action.value);
-        say(app, false, text);
+        say(app, false, false, text);
         break;
     }
     default: break;
@@ -2026,6 +2158,9 @@ static void hud_data_build(App *app)
         p->bot = s->bot;
         p->typing = i != app->me && s->typing;
         p->spectator = s->team == TEAM_SPECTATOR;
+        MuteKinds kinds = {app->mute_all->integer != 0, app->mute_team->integer != 0, app->mute_enemies->integer != 0,
+                           app->mute_specs->integer != 0};
+        p->muted = i != app->me && mutes_hide(&app->mutes, kinds, p->name, s->team, me->team, d->team_game, false);
     }
     d->ping = me->ping;
     d->online = client_net_joined(&app->net) && !app->playing;
@@ -2353,7 +2488,7 @@ static void net_take(App *app)
         app->hud_data.stats_menu = false;
     }
     MsgChat heard;
-    while (client_net_take_chat(&app->net, &heard)) chat_heard(app, heard.slot, heard.team, (ChatKind)heard.kind, heard.color, heard.text);
+    while (client_net_take_chat(&app->net, &heard)) chat_heard(app, heard.slot, heard.team, heard.taunt, (ChatKind)heard.kind, heard.color, heard.text);
 }
 
 int main(int argc, char *argv[])

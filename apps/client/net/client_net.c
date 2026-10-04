@@ -415,13 +415,13 @@ void client_net_flush(ClientNet *n) { net_flush(&n->link); }
 
 bool client_net_joined(const ClientNet *n) { return n->state == CLIENT_NET_JOINED; }
 
-bool client_net_say(ClientNet *n, const char *text, bool team)
+bool client_net_say(ClientNet *n, const char *text, bool team, bool taunt)
 {
     if (!live(n)) return false;
     uint8_t buf[NET_MTU];
     NetBuf b = netbuf_writer(buf, sizeof buf);
     MsgKind kind = MSG_CHAT;
-    MsgChat m = {.slot = (uint8_t)n->slot, .team = team};
+    MsgChat m = {.slot = (uint8_t)n->slot, .team = team, .taunt = taunt};
     snprintf(m.text, sizeof m.text, "%s", text);
     msg_kind(&b, &kind);
     msg_chat(&b, &m);

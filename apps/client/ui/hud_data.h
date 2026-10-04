@@ -91,6 +91,7 @@ typedef struct HudPlayer {
     bool spectator;
     bool dead;
     bool bot;
+    bool muted; // their chat kept off my screen (ui/mutes.h): the scoreboard's mute sign
     bool holding_flag;
     int kills, deaths, flags;
     int ping;

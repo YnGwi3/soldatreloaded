@@ -194,7 +194,7 @@ target("tests")
     -- the client's line and its demos, for the demo's round trip (tests/demo_test.c),
     -- and its taunts, for the taunt editor's round trip (tests/taunts_test.c)
     add_files("apps/client/net/client_net.c", "apps/client/net/demo.c", "apps/client/net/hwid.c",
-              "apps/client/ui/taunts.c")
+              "apps/client/ui/taunts.c", "apps/client/ui/mutes.c")
     add_includedirs("tests", "apps/server", "apps/launcher", "apps/client")
     add_packages("lua", "libcurl", "miniz")
     if is_plat("windows") then
