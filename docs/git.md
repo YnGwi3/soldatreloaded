@@ -16,13 +16,14 @@ The types:
 - `perf` — the same behaviour, faster or smaller on the wire.
 - `docs` — the readme, docs/, the comments that carry reasoning.
 - `test` — tests, and the tools that run them.
-- `build` — build.odin, the flags, the packaging.
+- `build` — xmake.lua, the flags, the packaging, the workflows.
 - `chore` — everything else: files in, files out, housekeeping.
 
-The scope is the part of the tree the change lands in, named as the tree names it:
-`geom`, `polymap`, `anim`, `weapons`, `game`, `net`, `pms`, `cvar`, `timer`, `client`,
-`server`, `editor`, `hud`, `shared`, `assets`, `readme`, `docs`, `dev`. Leave it out
-when the change is the whole repo's.
+The scope is the part of the tree the change lands in, named as the tree names it: a
+package (`client`, `server`, `shared`, `launcher`), a part of one (`game`, `weapons`,
+`net`, `console`, `hud`, `anim`, `polymap`), or a part of the install (`config`, `data`,
+`mods`, `scripts`), and `readme`, `docs`, `tests`, `ci`. Leave it out when the change is
+the whole repo's.
 
 ### The body
 
@@ -69,31 +70,48 @@ does not match is refused, so any release that changes the protocol will not tal
 the one before it. Say so in the tag's message, every time.
 
 A tag is the version; what ships beside it is the client, the server, the launcher and
-the contents of `assets/`, unpacked flat so that config.cfg and the art sit beside the
-executable: the packages `xmake dist` makes (see xmake.lua). The tag alone is not a
-release until those exist.
+the contents of `runtime/` (`data/`, `mods/default/`, `config/` at its defaults and
+`scripts/`), unpacked flat so that the art sits beside the executable: the packages
+`xmake dist` makes (see xmake.lua). The server's package leaves `config/` out, so
+unpacking a release over a server never touches its settings, lists or weapons mod; it
+makes them on its first start. The tag alone is not a release until those exist.
 
 Players start the launcher (`Soldat Reloaded.exe`, `soldatreloaded-launcher` on
-Linux), which keeps their copy at the newest release (launcher/update.h) and starts
-`client.exe`; `server.exe` is the dedicated server. Each release carries, for each
-platform, the game (`soldatreloaded-<version>-<platform>`, what a player downloads)
-and a manifest naming every file of an install by its hash; the launcher compares the
-install with it and downloads the small update package (`-patch`, the executables) when
-only those differ, and the full package when anything in `assets/` or `scripts/` does.
-config.cfg is the player's and is never replaced. So:
+Linux), at the top of the install, which keeps their copy at the newest release
+(launcher/update.h) and starts `bin/client.exe`; `bin/server.exe` is the dedicated
+server, and the server package's own sits at its top, the one executable there. Each
+release carries, for each platform, the game (`soldatreloaded-<version>-<platform>.zip`,
+what a player downloads) and a manifest naming every file of an install by its hash; the
+launcher compares the install with it and brings what differs, those files alone, out
+of the game's zip where it lies, or the zip whole when most of it changed. So a release
+costs a player what it changed. The manifest lists every file the release ships; the
+launcher treats each by where it lies, weighing the file on disk against the last
+release's manifest and the new one (launcher/update.h):
 
-- A release that adds a cvar registers it in code with its default (`cvar_register`).
-  A player's config.cfg is from whatever version they first installed, and a cvar
-  that only config.cfg mentions doesn't exist for them. A new archived cvar is
-  written into their config on the way out.
-- A new default bind reaches only new players: binds live in config.cfg, which starts
-  with `unbindall`, and the player's own copy is left as it is. Say so in the tag's
-  message when a release adds one.
+- **The release's own**, kept as it has it: the top-level files (the launcher,
+  `version.txt`), `bin/`, `data/`, `mods/default/` and `scripts/examples/`. Missing or
+  otherwise, it is brought, damage repaired; dropped by a release, deleted.
+- **Everything else a release ships** (`scripts/main.lua`, `config/`'s settings and lists):
+  its start of a file that is then the player's. It is made where it never was, brought
+  anew only while it is still as the last release made it, left alone once the player (or
+  the game, writing their settings) has changed it, stays out once they take it out, and
+  goes with a release that drops it only unchanged.
+
+Any other mod in `mods/`, `demos/` and what a server writes beside its own install are the
+player's and the server owner's, in no manifest, and never touched. So:
+
+- A release that adds a cvar registers it in code with its default (`cvar_register`), and
+  its help, which the settings files show beside it: a file has its line commented out
+  while it holds the default, so a new or changed default reaches everyone who hasn't set it.
+- A new default bind goes in the code (input_default_binds, or the client's VIEW_BINDS) and
+  reaches every player who hasn't bound that key otherwise.
 - The newest *published* release is the one every launcher moves to, so a release that
   shouldn't go out to players is made a pre-release or left a draft.
 
 Pushing the tag makes them. The release workflow (.github/workflows/release.yml)
-builds the packages on Windows and Linux, runs the tests, and attaches the archives to
-a GitHub release named after the tag, with the tag's message as its notes. So the
+builds the packages on Windows and Linux and runs the tests (ci.yml, which runs the same
+on every push to main and every pull request), attaches the archives to a GitHub release
+named after the tag, with the tag's message as its notes, and announces it on Discord
+(discord-notify.yml), each step only if the one before succeeded. So the
 version in xmake.lua's `set_version` is bumped in a commit before the tag, the tag's
 message is written for players to read, and a tag whose tests fail releases nothing.

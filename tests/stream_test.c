@@ -156,7 +156,7 @@ static void play(Connections *conns, Game *g, StreamClient *c, int rounds, Butto
     for (int round = 0; round < rounds; round++) {
         connections_poll(conns, g);
         server_tick(conns, g, bot_buttons);
-        if (match_over(&g->match)) round_start(g, conns, "assets", "ctf_Ash", MATCH_MODE_COUNT);
+        if (match_over(&g->match)) round_start(g, conns, TEST_DATA, "ctf_Ash", MATCH_MODE_COUNT);
         client_pump(c);
         if (c->welcomed && c->round) client_tick(c, buttons);
         enet_host_service(conns->link->host, NULL, 10); // the wait; what arrives is dispatched next round
@@ -323,7 +323,7 @@ void stream_tests(void)
     // wounds: the bot fires at me for a while; the server rules and I hear
     float health_before = mine->health;
     play(&conns, gs, &c, 90, 0, BUTTON_FIRE);
-    CHECK(mine->dead && mine->respawn_counter > 0 && abs(mine->respawn_counter - theirs->respawn_counter) <= 2,
+    CHECK(mine->dead && mine->respawn_counter > 0 && abs(mine->respawn_counter - theirs->respawn_counter) <= STREAM_VIEW_SLACK + 1, // the view may run that far behind
           "the volley killed me, and the respawn count reaches me with the served half (%d here, %d there)", mine->respawn_counter,
           theirs->respawn_counter);
     CHECK(c.damages > 0 && mine->health < health_before,

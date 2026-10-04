@@ -43,12 +43,25 @@ a test holds that every event type is classified.
   simulation proposing a wound; only the server turns it into damage, but its knockback
   and bink land wherever it is produced, as the original writes a victim's NextPush
   wherever the bullet is simulated: the owner's word about its soldier stands, so the
-  owner must feel the knock itself.
+  owner must feel the knock itself. The bink has a second word on a client: the
+  server's damage to it, binked as it is heard rather than when its tick comes on show,
+  which catches the hit the server saw and the bullet flown here missed (judged against
+  the shooter's view there, the present here). Of a hit's two words the first gives the
+  bink and the second, coming within BINK_MATCH_TICKS, is taken as it (hit_spray). The
+  bink goes with the life, cleared while dead, and with the gun put away.
 - **The owner's decisions, in its client state:** the shot (EVENT_SHOT, numbered so the
   same bullet comes out everywhere), the weapon throw (EVENT_WEAPON_DROP) and the flag
   throw (EVENT_FLAG_THROW).
 - **The server's decisions, in its snapshot:** damage, kill, respawn, flag grab, return
-  and score, kit and weapon pickup, the match's end, a new round.
+  and score, kit and weapon pickup, the match's end, a new round; and where a shot ended
+  (EVENT_SHOT_END), for the shots slow enough that a miss shows: a blast (grenades,
+  rockets, clusters, flak) and an arrow or thrown knife stopped in a body. The same
+  bullet flies everywhere, but not against the same soldiers: the server judges it
+  against the shooter's view, a client against its own present, so a grenade that went
+  off on a player at the server can roll on over that player's corpse at the player's
+  own client. Hearing the word, a client puts its flight of the shot where the server's
+  ended and ends it the same way; one it has already ended stays ended. Plain bullets
+  are not told: too quick for a miss to show, and many enough to crowd the queue.
 - **Neither, and never sent:** what one system asks of another within a machine, such
   as a bullet's knock on a flag (EVENT_THING_KNOCK) or a landed knife (EVENT_KNIFE_LAND);
   every machine produces these for itself.
@@ -272,8 +285,8 @@ that changes the netcode says what it measured, on what line.
    A soldier that goes whole brings its player's name, so the roster needs no message.
    Held-back things and soldiers go farthest first. Chat was built with the join.
    Rounds (server/rounds.c): the match ends at its limits or on `nextmap`, the scores
-   stand, and the next round begins on the next map of sv_maps, or the same again; the
-   world is made anew with the history ring cleared, everyone joined is placed, and
+   stand, and the next round begins on the rotation's next map (maplist.txt), or the
+   same again; the world is made anew with the history ring cleared, everyone joined is placed, and
    everyone hears the Map, a reliable message with the round's number, which is also
    how a joining client hears of its first round: joining and a new round are one path.
    Both streams are stamped with the round, and another round's are dropped, so packets

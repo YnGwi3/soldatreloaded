@@ -3,6 +3,7 @@
 // chat relayed. Real sockets; a bad line is simulated outside these tests.
 
 #include <string.h>
+#include <time.h>
 
 #include "connections.h"
 
@@ -17,6 +18,7 @@ typedef struct TestClient {
     NetLink link;
     uint16_t version;
     char password[NET_PASSWORD_SIZE]; // said in the Hello
+    char hwid[NET_HWID_SIZE];         // and its machine's, if any
     bool connected, welcomed, denied, closed, mapped;
     MsgWelcome welcome;
     MsgMap map;
@@ -54,6 +56,7 @@ static void client_pump(TestClient *c)
             c->connected = true;
             MsgHello hello = {.version = c->version, .name = "Tester"};
             snprintf(hello.password, sizeof hello.password, "%s", c->password);
+            snprintf(hello.hwid, sizeof hello.hwid, "%s", c->hwid);
             client_send(c, MSG_HELLO, route_hello, &hello);
         } else if (e.kind == NET_EVENT_DISCONNECT) {
             c->closed = true;
@@ -171,7 +174,7 @@ void join_tests(void)
     // players on, and 60% of them is both. A map vote's starter has not voted by
     // starting it: one yes of two is half, short; the starter's own passes it, and the
     // server is handed the map.
-    snprintf(conns.maps_dir, sizeof conns.maps_dir, "assets/maps");
+    snprintf(conns.maps_dir, sizeof conns.maps_dir, "%s", TEST_DATA "/maps");
     MsgChat cmd = {.slot = 0, .text = "/votemap ctf_Ash"};
     client_send(&a, MSG_CHAT, route_chat, &cmd);
     want_votes = 1;
@@ -245,8 +248,10 @@ void join_tests(void)
     }
     CHECK(d.closed && d.denied && !conns.items[1].joined && conns.vote.kind == VOTE_NONE,
           "passed, it is told why and cut off, and its slot frees (denied: %s; closed %d, joined %d, vote %d)", d.denial.reason, d.closed, conns.items[1].joined, conns.vote.kind);
-    CHECK(conns.bans[0].host != 0 && conns.bans[0].until == conns.ticks + VOTE_KICK_BAN_TICKS && strcmp(conns.bans[0].reason, "Vote Kicked") == 0,
-          "and its address is barred for an hour");
+    int64_t lifts = conns.lists.bans[0].expires - (int64_t)time(NULL);
+    CHECK(conns.lists.ban_count == 1 && lifts > VOTE_KICK_BAN_SECONDS - 5 && lifts <= VOTE_KICK_BAN_SECONDS &&
+              strcmp(conns.lists.bans[0].reason, "Vote Kicked") == 0,
+          "and its address is barred for an hour (%lld seconds)", (long long)lifts);
     // which keeps it out: the same address comes back and is denied
     TestClient e;
     TestClient *four[3] = {&a, &b, &e};
@@ -257,7 +262,7 @@ void join_tests(void)
 
     // A password asked for (sv_password) must be said in the Hello. The ban on this
     // address is lifted first, so the password alone decides.
-    memset(&conns.bans[0], 0, sizeof conns.bans[0]);
+    lists_unban(&conns.lists, conns.lists.bans[0].host, NULL);
     connections_set_password(&conns, "s3cret");
     TestClient p;
     TestClient *five[3] = {&a, &b, &p};
@@ -272,6 +277,29 @@ void join_tests(void)
           p.welcomed, p.denied, p.denial.reason);
     net_close(&p.link);
     connections_set_password(&conns, "");
+
+    // A machine banned by its hardware ID is kept out from any address; another isn't.
+    CHECK(connections_admin(&conns, NULL, -1, "banhw 0a1b2c3d4e5"), "a machine is banned by its hardware ID");
+    CHECK(client_open(&p, NET_VERSION), "it connects");
+    snprintf(p.hwid, sizeof p.hwid, "%s", "0A1B2C3D4E5");
+    pump(&conns, g, five, 3, third_answered);
+    CHECK(p.denied && !p.welcomed && strstr(p.denial.reason, "banned") != NULL, "and saying it in its Hello is denied: %s",
+          p.denial.reason);
+    net_close(&p.link);
+    CHECK(client_open(&p, NET_VERSION), "another machine connects from the same address");
+    snprintf(p.hwid, sizeof p.hwid, "%s", "FFFFFFFFFFF");
+    pump(&conns, g, five, 3, third_answered);
+    CHECK(p.welcomed && strcmp(conns.items[p.welcome.slot].hwid, "FFFFFFFFFFF") == 0,
+          "and is welcomed, the server keeping its hardware ID (welcomed %d: %s)", p.welcomed, p.denial.reason);
+    char mute[32];
+    snprintf(mute, sizeof mute, "mute %d", p.welcome.slot);
+    CHECK(connections_admin(&conns, NULL, -1, mute) && conns.lists.mute_count == 1 &&
+              strcmp(conns.lists.mutes[0].hwid, "FFFFFFFFFFF") == 0,
+          "a player muted is muted by their machine too");
+    connections_admin(&conns, NULL, -1, "unmute FFFFFFFFFFF");
+    connections_admin(&conns, NULL, -1, "unban 0A1B2C3D4E5");
+    CHECK(conns.lists.mute_count == 0 && conns.lists.ban_count == 0, "and unmuted and unbanned by hardware ID");
+    net_close(&p.link);
 
     // the first leaves carrying bravo's flag and manning a stationary gun
     Thing *flag = &g->world.things[MAX_THINGS - 1], *gun = &g->world.things[MAX_THINGS - 2];
@@ -292,9 +320,9 @@ void join_tests(void)
           "and the flag it carried falls, held by nobody (holder %d)", flag->holder);
     CHECK(!gun->is_static && g->world.soldiers[0].stat == 0, "and the stationary gun it manned is free");
     bool left_ban = false;
-    for (int i = 0; i < MAX_BANS; i++)
-        left_ban |= conns.bans[i].host != 0 && strcmp(conns.bans[i].reason, "Vote Kicked (Left game)") == 0 &&
-                    conns.bans[i].until == conns.ticks + VOTE_LEFT_BAN_TICKS;
+    for (int i = 0; i < conns.lists.ban_count; i++)
+        left_ban |= strcmp(conns.lists.bans[i].reason, "Vote Kicked (Left game)") == 0 &&
+                    conns.lists.bans[i].expires - (int64_t)time(NULL) > VOTE_LEFT_BAN_SECONDS - 5;
     CHECK(conns.vote.kind == VOTE_NONE && left_ban,
           "and leaving before the kick vote against it is decided ends the vote, and bars it five minutes");
     *flag = *gun = (Thing){0};

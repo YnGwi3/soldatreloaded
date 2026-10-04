@@ -8,7 +8,8 @@ into.
 
 ## The shape
 
-Three programs share one library:
+Three programs share one library, each a folder of packages/ (the paths in these docs are
+within it):
 
 - **shared/** is the simulation (shared/game), the data it reads (shared/resources:
   maps, animations, skeletons), the wire (shared/network), the console and the
@@ -270,7 +271,8 @@ missed:
   collider hit, bounce, split, blood, explosion, thing hit, poly effect, corpse hit,
   rope cut), and every ask between systems within a machine (Hit, knife land, thing
   knock). Hit is the simulation proposing a wound; it never travels, and only the
-  server's wounds pass acts on it.
+  server's wounds pass makes a wound of it, but its shove and bink land on every
+  machine that flew the bullet (docs/netcode.md).
 - **WIRE_OWNER**, a soldier's owner's decision: EVENT_SHOT, numbered so the same bullet
   comes out everywhere; EVENT_WEAPON_DROP; EVENT_FLAG_THROW. A client sends its own
   to the server, which does them as its own and relays them to everyone else.
@@ -344,10 +346,12 @@ snapshot to every player); a round change if one is due; flush.
 **A host** (server/host.c) is the world with authority, the line, the players, the bots
 and the rounds in one struct, pumped by whoever owns it. The dedicated server
 (server/main.c) is a console and a stdin reader around one. The client's Local Play is
-one inside the client (the `host` command), pumped each frame before the client
-polls its own line, which it then joins over the loopback as it would any server. So
-a game against bots is the netcode's ordinary case with no latency, friends can join
-the same game at the player's address, and there is one code path for hosting.
+that server: the `host` command starts bin/server beside the game (client/net/
+local_server.c) on the install's own files, its console piped into the game's, and joins
+it over the loopback once it says it is hosting, as it would any server. So a game
+against bots is the netcode's ordinary case with no latency, friends can join the same
+game at the player's address, and Local Play hosts exactly as a dedicated server from
+that install would: its server.cfg, weapons.ini, maplist.txt, lists and script.
 
 **The bots** (server/bots.c) are the original's AI (opensoldat's AI.pas), ported as it
 stands, and they sit where a client sits: a source of commands. Each tick a bot reads
@@ -370,12 +374,12 @@ too). A client that hears it puts the scoreboard up, closes the weapons menu, pr
 "Next map:", and over the board says who won (`draw_end_game_texts`), as the original's
 ClientHandleMapChange and RenderEndGameTexts do. Votes (server/connections.c) run as
 the original's: twenty seconds, only yeses, against the players on when the vote began,
-passing at sv_votepercent; a kick passed bars the address for an hour. A player heard
-from more than net_floodingpackets times in a second is warned, and past sv_warnings_flood
+passing at sv_votepercent; a kick passed bars the address and the machine for an hour. A
+player heard from more than net_floodingpackets times in a second is warned, and past sv_warnings_flood
 warnings kicked and barred for a quarter of an hour; one who chats faster than a line a
 second for long is kicked for five minutes (the original's FloodWarnings and ChatWarnings). The escape
 menu's map window pages the server's own list (MsgMapQuery, MsgMapReply), the
-rotation or, with none, every map under assets.
+rotation or, with none, every map under data/.
 
 **A round** (server/rounds.c): the context reloaded, the world and match made anew
 with the history ring cleared, everyone placed, everyone told (MsgMap, reliable, with
@@ -385,7 +389,7 @@ the same way it hears of every other: joining and a new round are one path.
 
 ## Tests
 
-The simulation is tested as scenes (tests/test.c): a map loaded from assets/, two
+The simulation is tested as scenes (tests/test.c): a map loaded from runtime/data/, two
 soldiers placed, `game_tick` run with authority on scripted buttons, and the events
 tallied. Combat, corpses and things have their scenes; the passes' mail has
 events_test; the wire has its classification, round-trip and refusal tests; the join

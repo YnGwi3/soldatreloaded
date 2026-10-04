@@ -1,0 +1,5 @@
+// The maps in rotation, one to a line, played in turn; with none, the map is played
+// again. The game's Local Play page writes it as you tick maps, and a server beside it
+// reads it as it starts (sv_maps on the command line goes over it, for that run). A map
+// that isn't in data/maps/ is passed over.
+

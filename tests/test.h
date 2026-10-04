@@ -2,7 +2,7 @@
 
 // The tests: headless checks of the simulation on real maps, and of the console. Each
 // suite is a function of checks; a check that fails says where and why, and the run
-// ends with how many failed. They read the maps and animations from assets/, so they
+// ends with how many failed. They read the maps and animations from runtime/data/, so they
 // run from the project directory:
 //
 //   xmake test
@@ -14,6 +14,9 @@
 #include "game/game.h"
 #include "game/systems/systems.h"
 
+// What the game plays by (data/), as the tests find it from the project directory.
+#define TEST_DATA "runtime/data"
+
 // --- checks ------------------------------------------------------------------------
 
 void check_that(bool ok, const char *file, int line, const char *fmt, ...);
@@ -23,7 +26,7 @@ void check_that(bool ok, const char *file, int line, const char *fmt, ...);
 
 // --- scenes ------------------------------------------------------------------------
 
-// A game on `map` from assets/, with alpha's soldier 0 on an alpha spawn point holding
+// A game on `map` from data/, with alpha's soldier 0 on an alpha spawn point holding
 // `a_weapon` and bravo's soldier 1 `gap` to its right holding `b_weapon`; the world
 // has authority, as the server's does.
 Game *scene(const char *map, float gap, WeaponId a_weapon, WeaponId b_weapon);
@@ -73,6 +76,7 @@ void wire_tests(void);
 void stream_tests(void);
 void rewind_tests(void);
 void console_tests(void);
+void taunt_tests(void);
 void color_tests(void);
 void bot_tests(void);
 void round_tests(void);
@@ -80,3 +84,8 @@ void script_tests(void);
 void query_tests(void);
 void lobby_tests(void);
 void launcher_tests(void);
+void demo_tests(void);
+void shot_end_tests(void);
+void bink_tests(void);
+void lists_tests(void);
+void weapons_mod_tests(void);

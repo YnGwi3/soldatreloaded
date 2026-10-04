@@ -8,19 +8,20 @@
 #include <string.h>
 
 #include "archive.h"
-#include "desktop.h"
 #include "files.h"
 #include "http.h"
 #include "manifest.h"
 #include "sha256.h"
 #include "test.h"
 #include "update.h"
+#include "utils/utils.h"
 
 #ifdef _WIN32
 #include <direct.h>
 #define change_directory _chdir
 #define current_directory _getcwd
 #else
+#include <sys/stat.h>
 #include <unistd.h>
 #define change_directory chdir
 #define current_directory getcwd
@@ -71,25 +72,35 @@ static void manifest_tests(void)
         "version 1.2.3\n"
         "\n"
         "package update e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855 10 pkg-update.zip\n"
+        "package full e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855 20 pkg.zip\n"
         "file e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855 0 Soldat Reloaded.exe\n"
-        "file ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad 3 assets/maps/ctf_Ash.pms";
+        "file ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad 3 data/maps/ctf_Ash.pms\n"
+        "file ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad 3 scripts/main.lua";
     Manifest m;
     char error[128];
     bool ok = manifest_parse(&m, text, strlen(text), error, sizeof error);
     CHECK(ok, "a manifest parses: %s", ok ? "" : error);
-    CHECK(ok && !strcmp(m.version, "1.2.3") && m.count == 2, "its version and its two files");
-    CHECK(ok && !strcmp(m.update.path, "pkg-update.zip") && m.update.size == 10 && !m.full.path[0],
-          "the update package, and no full one");
+    CHECK(ok && !strcmp(m.version, "1.2.3") && m.count == 3, "its version and its three files");
+    CHECK(manifest_protected("Soldat Reloaded.exe") && manifest_protected("version.txt") &&
+              manifest_protected("bin/client.exe") && manifest_protected("data/maps/ctf_Ash.pms") &&
+              manifest_protected("mods/default/sfx/ak74-fire.wav") &&
+              manifest_protected("scripts/examples/greeter.lua"),
+          "the release keeps its own as it has them: the top, bin/, data/, mods/default/, its examples");
+    CHECK(!manifest_protected("scripts/main.lua") && !manifest_protected("mods/mine/x.png") &&
+              !manifest_protected("config/maplist.txt") && !manifest_protected("config/server.cfg") && !manifest_protected("scripts/examplesish.lua"),
+          "and anything else it ships is the player's once they change it");
+    CHECK(ok && !strcmp(m.full.path, "pkg.zip") && m.full.size == 20,
+          "its package, an older release's smaller one passed over");
     const ManifestFile *f = ok ? manifest_find(&m, "Soldat Reloaded.exe") : NULL;
     CHECK(f && f->size == 0 && f->sha256[0] == 0xe3, "a path with a space is the rest of the line");
-    CHECK(ok && manifest_find(&m, "assets/maps/ctf_Ash.pms") && !manifest_find(&m, "ctf_Ash.pms"),
+    CHECK(ok && manifest_find(&m, "data/maps/ctf_Ash.pms") && !manifest_find(&m, "ctf_Ash.pms"),
           "files are found by their whole path");
     manifest_free(&m);
 
     const char *unsafe[] = {"../x", "a/../b", "/etc/passwd", "C:/x", "a\\b", "a//b", "./a", "a/", ""};
     for (size_t i = 0; i < sizeof unsafe / sizeof unsafe[0]; i++)
         CHECK(!manifest_safe_path(unsafe[i]), "'%s' would reach outside the install", unsafe[i]);
-    CHECK(manifest_safe_path("assets/maps/ctf_Ash.pms") && manifest_safe_path("a..b/c"), "ordinary paths are fine");
+    CHECK(manifest_safe_path("data/maps/ctf_Ash.pms") && manifest_safe_path("a..b/c"), "ordinary paths are fine");
 
     const char *bad[] = {
         "file e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855 0 x\n", // no version
@@ -190,8 +201,8 @@ static void archive_tests(void)
     // Names of every kind tar writes: a short one, one split over the prefix, one in a
     // GNU long-name entry and one in a pax header, longer than a header holds.
     char long_name[300], pax_name[300], pax_record[400];
-    snprintf(long_name, sizeof long_name, "pkg/assets/%0180d/gnu.txt", 0);
-    snprintf(pax_name, sizeof pax_name, "pkg/assets/%0170d/pax.txt", 1);
+    snprintf(long_name, sizeof long_name, "pkg/data/%0180d/gnu.txt", 0);
+    snprintf(pax_name, sizeof pax_name, "pkg/data/%0170d/pax.txt", 1);
     int record = (int)strlen(" path=\n") + (int)strlen(pax_name);
     record += snprintf(NULL, 0, "%d", record + 3); // the length counts its own digits
     snprintf(pax_record, sizeof pax_record, "%d path=%s\n", record, pax_name);
@@ -199,7 +210,7 @@ static void archive_tests(void)
     Bytes tar = {0};
     tar_entry(&tar, "pkg/", NULL, '5', "", 0);
     tar_entry(&tar, "pkg/game", NULL, '0', "the game", 8);
-    tar_entry(&tar, "maps/ctf_Ash.pms", "pkg/assets", '0', "a map", 5);
+    tar_entry(&tar, "maps/ctf_Ash.pms", "pkg/data", '0', "a map", 5);
     tar_entry(&tar, "././@LongLink", NULL, 'L', long_name, strlen(long_name) + 1);
     tar_entry(&tar, "truncated", NULL, '0', "long", 4);
     tar_entry(&tar, "PaxHeaders/x", NULL, 'x', pax_record, strlen(pax_record));
@@ -211,7 +222,7 @@ static void archive_tests(void)
     bool ok = archive_extract(SCRATCH "/pkg.tar.gz", SCRATCH "/tar", NULL, NULL, error, sizeof error);
     CHECK(ok, "a tar.gz of several gzip members, an empty one first as xmake writes it, unpacks: %s", ok ? "" : error);
     CHECK(holds(SCRATCH "/tar/game", "the game"), "a file at the top, without the package's directory");
-    CHECK(holds(SCRATCH "/tar/assets/maps/ctf_Ash.pms", "a map"), "a name split over the ustar prefix");
+    CHECK(holds(SCRATCH "/tar/data/maps/ctf_Ash.pms", "a map"), "a name split over the ustar prefix");
     char path[512];
     snprintf(path, sizeof path, SCRATCH "/tar/%s", long_name + 4);
     CHECK(holds(path, "long"), "a GNU long name");
@@ -235,10 +246,10 @@ static void archive_tests(void)
 
     remove(SCRATCH "/pkg.zip");
     mz_zip_add_mem_to_archive_file_in_place(SCRATCH "/pkg.zip", "pkg/game.exe", "zipped", 6, NULL, 0, MZ_DEFAULT_LEVEL);
-    mz_zip_add_mem_to_archive_file_in_place(SCRATCH "/pkg.zip", "pkg/assets/a.txt", "deep", 4, NULL, 0, MZ_DEFAULT_LEVEL);
+    mz_zip_add_mem_to_archive_file_in_place(SCRATCH "/pkg.zip", "pkg/data/a.txt", "deep", 4, NULL, 0, MZ_DEFAULT_LEVEL);
     ok = archive_extract(SCRATCH "/pkg.zip", SCRATCH "/zip", NULL, NULL, error, sizeof error);
     CHECK(ok, "a zip unpacks: %s", ok ? "" : error);
-    CHECK(holds(SCRATCH "/zip/game.exe", "zipped") && holds(SCRATCH "/zip/assets/a.txt", "deep"),
+    CHECK(holds(SCRATCH "/zip/game.exe", "zipped") && holds(SCRATCH "/zip/data/a.txt", "deep"),
           "its files, without the package's directory");
 }
 
@@ -259,32 +270,27 @@ static void entry_line(char *line, size_t size, const char *kind, const char *fi
     snprintf(line, size, "%s %s %llu %s\n", kind, hex, (unsigned long long)bytes, name);
 }
 
-// A release of `files` as `xmake dist` makes one: the two zips under download/v<version>/
-// and the manifest under latest/download/.
+// A release of `files` as `xmake dist` makes one: the package, a zip under
+// download/v<version>/ with everything in it under one directory, and the manifest under
+// latest/download/.
 static void release(const char *root, const char *version, const Source *files, int count)
 {
     char path[512], line[512];
     files_remove_tree(root);
-    char full[512], update[512];
-    snprintf(full, sizeof full, "%s/download/v%s/pkg-full.zip", root, version);
-    snprintf(update, sizeof update, "%s/download/v%s/pkg-update.zip", root, version);
-    files_make_parents(full);
+    char package[512];
+    snprintf(package, sizeof package, "%s/download/v%s/pkg.zip", root, version);
+    files_make_parents(package);
     for (int i = 0; i < count; i++) {
         snprintf(path, sizeof path, "pkg/%s", files[i].path);
-        size_t n = strlen(files[i].text);
-        mz_zip_add_mem_to_archive_file_in_place(full, path, files[i].text, n, NULL, 0, MZ_DEFAULT_LEVEL);
-        if (manifest_top_level(files[i].path) && strcmp(files[i].path, "config.cfg"))
-            mz_zip_add_mem_to_archive_file_in_place(update, path, files[i].text, n, NULL, 0, MZ_DEFAULT_LEVEL);
+        mz_zip_add_mem_to_archive_file_in_place(package, path, files[i].text, strlen(files[i].text), NULL, 0,
+                                                MZ_DEFAULT_LEVEL);
     }
 
     char text[4096];
     size_t at = (size_t)snprintf(text, sizeof text, "version %s\n", version);
-    entry_line(line, sizeof line, "package full", full, "pkg-full.zip");
-    at += (size_t)snprintf(text + at, sizeof text - at, "%s", line);
-    entry_line(line, sizeof line, "package update", update, "pkg-update.zip");
+    entry_line(line, sizeof line, "package full", package, "pkg.zip");
     at += (size_t)snprintf(text + at, sizeof text - at, "%s", line);
     for (int i = 0; i < count; i++) {
-        if (!strcmp(files[i].path, "config.cfg")) continue;
         snprintf(path, sizeof path, "%s/source/%s", root, files[i].path);
         files_write(path, files[i].text, strlen(files[i].text));
         entry_line(line, sizeof line, "file", path, files[i].path);
@@ -296,6 +302,28 @@ static void release(const char *root, const char *version, const Source *files, 
 
 static void enter(const char *path) { CHECK(change_directory(path) == 0, "the test can enter %s", path); }
 
+// A megabyte of letters, no two the same from one `seed` to another: art, as far as an
+// update can tell, and too much of the package to pass unnoticed in what one downloads.
+static const char *art(char *out, size_t size, uint32_t seed)
+{
+    for (size_t i = 0; i + 1 < size; i++) {
+        seed = seed * 1664525u + 1013904223u;
+        out[i] = (char)('a' + (seed >> 24) % 26);
+    }
+    out[size - 1] = '\0';
+    return out;
+}
+
+// How many bytes an update brought, and what the package of `version` weighs.
+static uint64_t package_size(const char *here, const char *version)
+{
+    char path[1400];
+    uint64_t size = 0;
+    snprintf(path, sizeof path, "%s/" SCRATCH "/releases/download/v%s/pkg.zip", here, version);
+    files_size(path, &size);
+    return size;
+}
+
 static void update_tests(void)
 {
     char here[1024], releases[1200], version[32], error[512];
@@ -304,20 +332,28 @@ static void update_tests(void)
         if (*c == '\\') *c = '/';
     snprintf(releases, sizeof releases, "file://%s%s/" SCRATCH "/releases", here[0] == '/' ? "" : "/", here);
     UpdateOptions options = {.releases = releases, .platform = "test"};
+    static char big[1 << 20], bigger[1 << 20];
+    art(big, sizeof big, 1);
+    art(bigger, sizeof bigger, 2);
 
-    // version 1, installed by hand with the player's own config
-    const Source v1[] = {{"version.txt", "1\n"}, {"game.exe", "old game"}, {"assets/a.txt", "art"},
-                         {"assets/b.txt", "more art"}, {"config.cfg", "theirs"}};
-    release(SCRATCH "/releases", "1", v1, 5);
+    // version 1, installed by hand: the game's defaults, and beside them the player's own
+    // config, the server owner's lists, their script and a config.cfg from before config/
+    const Source v1[] = {{"version.txt", "1\n"}, {"game.exe", "old game"}, {"data/a.txt", "art"},
+                         {"data/b.txt", "more art"}, {"scripts/examples/x.lua", "an example"},
+                         {"bin/server.exe", "old server"}, {"mods/default/big.png", big}};
+    release(SCRATCH "/releases", "1", v1, 7);
     files_remove_tree(SCRATCH "/install");
     files_make_directory(SCRATCH "/install");
-    for (int i = 0; i < 4; i++) {
+    for (int i = 0; i < 7; i++) {
         char path[256];
         snprintf(path, sizeof path, SCRATCH "/install/%s", v1[i].path);
         files_write(path, v1[i].text, strlen(v1[i].text));
     }
     files_write(SCRATCH "/install/config.cfg", "mine", 4);
-    files_write(SCRATCH "/install/scripts/server.lua", "a player's script", 17);
+    files_write(SCRATCH "/install/config/client.cfg", "my settings", 11);
+    files_write(SCRATCH "/install/config/banlist.txt", "my bans", 7);
+    files_write(SCRATCH "/install/mods/mine/sfx/ak74-fire.wav", "my gun", 6);
+    files_write(SCRATCH "/install/scripts/main.lua", "a player's script", 17);
 
     if (change_directory(SCRATCH "/install") != 0) {
         CHECK(false, "the scratch install can be entered");
@@ -328,58 +364,89 @@ static void update_tests(void)
           "an install with no manifest.txt that matches the release is current (%d: %s)", outcome, error);
     CHECK(files_exists(UPDATE_MANIFEST), "and is given its manifest.txt");
 
-    // version 2 changes the game only: the update package
-    const Source v2[] = {{"version.txt", "2\n"}, {"game.exe", "new game"}, {"assets/a.txt", "art"},
-                         {"assets/b.txt", "more art"}, {"config.cfg", "theirs"}};
+    // version 2 changes the game, a program in bin/ and a default: those alone come down,
+    // out of the package where it lies
+    // and the player's files to be: one theirs already, and new ones
+    const Source v2[] = {{"version.txt", "2\n"}, {"game.exe", "new game"}, {"data/a.txt", "art"},
+                         {"data/b.txt", "more art"}, {"scripts/examples/x.lua", "a new example"},
+                         {"bin/server.exe", "new server"}, {"mods/default/big.png", big},
+                         {"scripts/main.lua", "the release's script"}, {"scripts/new.lua", "a start"},
+                         {"scripts/kept.lua", "as it came"}, {"scripts/edited.lua", "as it came"}};
     enter(here);
-    release(SCRATCH "/releases", "2", v2, 5);
-    remove(SCRATCH "/releases/download/v2/pkg-full.zip"); // so only the update package can serve
+    release(SCRATCH "/releases", "2", v2, 11);
     enter(SCRATCH "/install");
+    uint64_t before = http_received();
     outcome = update_run(&options, NULL, version, sizeof version, error, sizeof error);
-    CHECK(outcome == UPDATE_UPDATED && !strcmp(version, "2"), "a new game comes in the update package (%d: %s)",
-          outcome, error);
-    CHECK(holds("game.exe", "new game") && holds("version.txt", "2\n"), "the new game, and its version");
-    CHECK(holds("config.cfg", "mine") && holds("scripts/server.lua", "a player's script"),
-          "the player's config and script are left alone");
+    uint64_t brought = http_received() - before, weighs = package_size(here, "2");
+    CHECK(outcome == UPDATE_UPDATED && !strcmp(version, "2"), "a new game comes in (%d: %s)", outcome, error);
+    CHECK(brought * 10 < weighs, "as its files alone: %llu bytes of the package's %llu", (unsigned long long)brought,
+          (unsigned long long)weighs);
+    CHECK(holds("game.exe", "new game") && holds("bin/server.exe", "new server") && holds("version.txt", "2\n"),
+          "the new game, the program in bin/, and its version");
+    CHECK(holds("scripts/examples/x.lua", "a new example"), "and the new example with it");
+    CHECK(holds("config/client.cfg", "my settings") && holds("config/banlist.txt", "my bans") &&
+              holds("mods/mine/sfx/ak74-fire.wav", "my gun") && holds("config.cfg", "mine") &&
+              holds("scripts/main.lua", "a player's script"),
+          "the player's config, mod and script and the server's lists are left alone");
     CHECK(!files_exists(UPDATE_STAGING), "nothing is left in .update");
+    CHECK(holds("scripts/new.lua", "a start") && holds("scripts/kept.lua", "as it came") &&
+              holds("scripts/edited.lua", "as it came"),
+          "the player's files to be are made where they weren't; their own main.lua stays theirs");
+    remove("scripts/new.lua");
+    files_write("scripts/edited.lua", "mine", 4);
     outcome = update_run(&options, NULL, version, sizeof version, error, sizeof error);
     CHECK(outcome == UPDATE_CURRENT, "then it is current (%d: %s)", outcome, error);
+    CHECK(!files_exists("scripts/new.lua") && holds("scripts/edited.lua", "mine"),
+          "one taken out stays out, and one changed is left as it is");
 
-    // version 3 changes an asset: the full package
-    const Source v3[] = {{"version.txt", "3\n"}, {"game.exe", "new game"}, {"assets/a.txt", "new art"},
-                         {"assets/b.txt", "more art"}, {"assets/c.txt", "a new map"}, {"config.cfg", "theirs"}};
+    // version 3 changes most of the package's weight: it comes whole
+    // (and new starts of the player's files: one they changed, one they didn't)
+    const Source v3[] = {{"version.txt", "3\n"}, {"game.exe", "new game"}, {"data/a.txt", "new art"},
+                         {"data/b.txt", "more art"}, {"data/c.txt", "a new map"},
+                         {"scripts/examples/x.lua", "a new example"}, {"bin/server.exe", "new server"},
+                         {"mods/default/big.png", bigger}, {"scripts/kept.lua", "a better one"},
+                         {"scripts/edited.lua", "a better one"}};
     enter(here);
-    release(SCRATCH "/releases", "3", v3, 6);
+    release(SCRATCH "/releases", "3", v3, 10);
     enter(SCRATCH "/install");
+    before = http_received();
     outcome = update_run(&options, NULL, version, sizeof version, error, sizeof error);
-    CHECK(outcome == UPDATE_UPDATED && holds("assets/a.txt", "new art") && holds("assets/c.txt", "a new map") &&
-              holds("version.txt", "3\n"),
-          "changed and new assets come in the full package (%d: %s)", outcome, error);
-    CHECK(holds("config.cfg", "mine"), "whose config doesn't replace the player's");
+    brought = http_received() - before;
+    weighs = package_size(here, "3");
+    CHECK(outcome == UPDATE_UPDATED && holds("data/a.txt", "new art") && holds("data/c.txt", "a new map") &&
+              holds("mods/default/big.png", bigger) && holds("version.txt", "3\n"),
+          "changed and new art come in (%d: %s)", outcome, error);
+    CHECK(brought >= weighs, "most of the package changed, the package whole: %llu bytes of its %llu",
+          (unsigned long long)brought, (unsigned long long)weighs);
+    CHECK(holds("config/client.cfg", "my settings") && holds("config.cfg", "mine"),
+          "which doesn't replace the player's config");
+    CHECK(holds("scripts/kept.lua", "a better one") && holds("scripts/edited.lua", "mine"),
+          "one as the last release made it is brought anew; one the player changed is left theirs");
 
     // damage: an asset cut short is found by its size, one changed in place only by --verify
-    files_write("assets/b.txt", "more", 4);
+    files_write("data/b.txt", "more", 4);
     outcome = update_run(&options, NULL, version, sizeof version, error, sizeof error);
-    CHECK(outcome == UPDATE_REPAIRED && holds("assets/b.txt", "more art"), "a damaged asset is repaired (%d: %s)",
+    CHECK(outcome == UPDATE_REPAIRED && holds("data/b.txt", "more art"), "a damaged asset is repaired (%d: %s)",
           outcome, error);
-    files_write("assets/b.txt", "MORE ART", 8);
+    files_write("data/b.txt", "MORE ART", 8);
     outcome = update_run(&options, NULL, version, sizeof version, error, sizeof error);
     CHECK(outcome == UPDATE_CURRENT, "an asset of the right size is trusted to manifest.txt");
     options.thorough = true;
     outcome = update_run(&options, NULL, version, sizeof version, error, sizeof error);
-    CHECK(outcome == UPDATE_REPAIRED && holds("assets/b.txt", "more art"), "and hashed with --verify");
+    CHECK(outcome == UPDATE_REPAIRED && holds("data/b.txt", "more art"), "and hashed with --verify");
     options.thorough = false;
     files_write("game.exe", "NEW GAME", 8);
     outcome = update_run(&options, NULL, version, sizeof version, error, sizeof error);
     CHECK(outcome == UPDATE_REPAIRED && holds("game.exe", "new game"), "the executables are always hashed");
 
-    // a download that isn't what the release lists is refused, and nothing is moved
+    // a package that isn't what the release lists is refused, its files and whole, and
+    // nothing is moved
     enter(here);
-    files_write(SCRATCH "/releases/download/v3/pkg-update.zip", "not a zip", 9);
+    files_write(SCRATCH "/releases/download/v3/pkg.zip", "not a zip", 9);
     enter(SCRATCH "/install");
     files_write("game.exe", "NEW GAME", 8);
     outcome = update_run(&options, NULL, version, sizeof version, error, sizeof error);
-    CHECK(outcome == UPDATE_FAILED && holds("game.exe", "NEW GAME"), "a damaged download changes nothing");
+    CHECK(outcome == UPDATE_FAILED && holds("game.exe", "NEW GAME"), "a damaged package changes nothing");
 
     // no release to ask: the install as it is
     options.releases = "file:///nowhere/at/all";
@@ -394,41 +461,147 @@ static void update_tests(void)
     options.releases = releases;
     files_write("soldatreloaded.exe", "older game", 10);
     files_write("soldatreloaded.exe.old", "oldest game", 11);
-    const Source v4[] = {{"version.txt", "4\n"}, {"client.exe", "new game"}, {"assets/a.txt", "new art"},
-                         {"assets/b.txt", "more art"}, {"assets/c.txt", "a new map"}, {"config.cfg", "theirs"}};
+    const Source v4[] = {{"version.txt", "4\n"}, {"client.exe", "new game"}, {"data/a.txt", "new art"},
+                         {"data/b.txt", "more art"}, {"data/c.txt", "a new map"},
+                         {"scripts/examples/x.lua", "a new example"}, {"bin/server.exe", "new server"},
+                         {"mods/default/big.png", bigger}};
     enter(here);
-    release(SCRATCH "/releases", "4", v4, 6);
+    release(SCRATCH "/releases", "4", v4, 8);
     enter(SCRATCH "/install");
     outcome = update_run(&options, NULL, version, sizeof version, error, sizeof error);
     CHECK(outcome == UPDATE_UPDATED && holds("client.exe", "new game"), "a renamed game comes in (%d: %s)", outcome,
           error);
     CHECK(!files_exists("game.exe") && !files_exists("soldatreloaded.exe") && !files_exists("soldatreloaded.exe.old"),
           "and the names it had are gone, with what they were moved aside to");
-    CHECK(holds("config.cfg", "mine") && holds("scripts/server.lua", "a player's script"),
+    CHECK(holds("config/client.cfg", "my settings") && holds("config/banlist.txt", "my bans") &&
+              holds("mods/mine/sfx/ak74-fire.wav", "my gun") && holds("config.cfg", "mine") &&
+              holds("scripts/main.lua", "a player's script"),
           "but not the player's own files");
+    CHECK(!files_exists("scripts/kept.lua") && holds("scripts/edited.lua", "mine"),
+          "one the release no longer has goes as it came, and stays as the player changed it");
+
+    // version 5 changes the launcher and the game: the launcher comes first and alone, the
+    // running one moved aside, and the game waits for the new one's start
+    files_write("launcher.exe", "old launcher", 12);
+    const Source v5[] = {{"version.txt", "5\n"}, {"client.exe", "newer game"}, {"launcher.exe", "new launcher"},
+                         {"data/a.txt", "new art"}, {"mods/default/big.png", bigger}};
+    enter(here);
+    release(SCRATCH "/releases", "5", v5, 5);
+    enter(SCRATCH "/install");
+    options.self = "launcher.exe";
+    outcome = update_run(&options, NULL, version, sizeof version, error, sizeof error);
+    CHECK(outcome == UPDATE_RESTART && holds("launcher.exe", "new launcher") && holds(UPDATE_TMP, "old launcher"),
+          "a new launcher comes alone, the running one moved aside to " UPDATE_TMP " (%d: %s)", outcome, error);
+    CHECK(holds("client.exe", "new game") && holds("version.txt", "4\n") && !strcmp(version, "4") && error[0],
+          "and the game is left for the new launcher, the player told to start again");
+    outcome = update_run(&options, NULL, version, sizeof version, error, sizeof error);
+    CHECK(outcome == UPDATE_UPDATED && !files_exists(UPDATE_TMP) && holds("client.exe", "newer game") &&
+              holds("version.txt", "5\n"),
+          "started again, the new launcher clears the old away and brings the rest (%d: %s)", outcome, error);
+    options.self = NULL;
 
     enter(here);
 }
 
-// The Linux menu entry's text: the launcher and its icon, the paths escaped as the
-// Desktop Entry Specification has them.
-static void desktop_tests(void)
+// --- the release xmake dist packed --------------------------------------------------------
+
+#define RELEASE "build/release"
+
+static bool latest_visit(const char *name, void *user)
 {
-    char text[1024];
-    CHECK(desktop_entry_text("/home/p/games/sr/soldatreloaded-launcher", text, sizeof text) &&
-              !strcmp(text, "[Desktop Entry]\nType=Application\nName=Soldat Reloaded\n"
-                            "Exec=\"/home/p/games/sr/soldatreloaded-launcher\"\n"
-                            "Icon=/home/p/games/sr/assets/icon.png\n"
-                            "Terminal=false\nCategories=Game;ActionGame;\nStartupWMClass=soldatreloaded\n"),
-          "a menu entry names the launcher and the icon beside it");
-    // the path /home/p/my "games" $5 50% a\b/l, and the entry's lines for it
-    CHECK(desktop_entry_text("/home/p/my \"games\" $5 50% a\\b/l", text, sizeof text) &&
-              strstr(text, "\nExec=\"/home/p/my \\\\\"games\\\\\" \\\\$5 50%% a\\\\\\\\b/l\"\n") &&
-              strstr(text, "\nIcon=/home/p/my \"games\" $5 50% a\\\\b/assets/icon.png\n"),
-          "and escapes what a path holds: in Exec quotes, dollars, percents and backslashes; in Icon backslashes");
-    CHECK(!desktop_entry_text("/home/p/new\nline/l", text, sizeof text), "a path with a control character has no entry");
-    CHECK(!desktop_entry_text("/home/p/l", text, 40), "nor one too long for the space given");
-    CHECK(!desktop_entry_text("l", text, sizeof text), "nor a path that isn't one");
+    if (strncmp(name, "latest-", 7) != 0 || !strstr(name, ".txt")) return true;
+    snprintf(user, 256, RELEASE "/%s", name);
+    return false;
+}
+
+// Whether every file `m` names is under `into`, where it says, of its size and hash; those
+// `only` lets through, if it is given. How many are missing and how many not as listed.
+static void compare(const Manifest *m, const char *into, bool (*only)(const char *path), int *missing, int *wrong,
+                    const char **first)
+{
+    *missing = *wrong = 0;
+    *first = "none";
+    for (int i = 0; i < m->count; i++) {
+        const ManifestFile *file = &m->files[i];
+        if (only && !only(file->path)) continue;
+        char path[512];
+        uint8_t digest[32];
+        uint64_t bytes = 0;
+        snprintf(path, sizeof path, "%s/%s", into, file->path);
+        if (!files_exists(path)) {
+            if (!(*missing)++ && !*wrong) *first = file->path;
+        } else if (!files_size(path, &bytes) || bytes != file->size || !files_sha256(path, digest, NULL, NULL) ||
+                   memcmp(digest, file->sha256, sizeof digest)) {
+            if (!(*wrong)++ && !*missing) *first = file->path;
+        }
+    }
+}
+
+// The package of build/release/, if `xmake dist` has made it, as a launcher takes it: what
+// latest-<plat>.txt lists; unpacked (archive_extract, which drops the package's own
+// directory) every file the manifest names, where it says and as it says, the executables
+// executable; and, as an update brings them, the code's files alone out of it where it lies,
+// for a sliver of its weight. The release job runs this after packing, so each platform's
+// package is checked before it ships.
+static void release_tests(void)
+{
+    char latest[256] = "", error[256], here[1024];
+    for_each_file(RELEASE, latest_visit, latest);
+    if (!latest[0] || !current_directory(here, sizeof here)) {
+        printf("no release in " RELEASE " to check; `xmake dist` makes one\n");
+        return;
+    }
+    for (char *c = here; *c; c++)
+        if (*c == '\\') *c = '/';
+    Manifest m;
+    if (!manifest_load(&m, latest, error, sizeof error)) {
+        CHECK(false, "%s reads: %s", latest, error);
+        return;
+    }
+    char archive[512];
+    uint8_t digest[32];
+    uint64_t bytes = 0;
+    snprintf(archive, sizeof archive, RELEASE "/%s", m.full.path);
+    CHECK(files_sha256(archive, digest, NULL, NULL) && files_size(archive, &bytes) && bytes == m.full.size &&
+              !memcmp(digest, m.full.sha256, sizeof digest),
+          "%s is the package %s lists", m.full.path, latest);
+
+    int missing, wrong;
+    const char *first;
+    files_remove_tree(SCRATCH "/release");
+    CHECK(archive_extract(archive, SCRATCH "/release", NULL, NULL, error, sizeof error), "%s unpacks (%s)", m.full.path,
+          error);
+    compare(&m, SCRATCH "/release", NULL, &missing, &wrong, &first);
+    CHECK(missing == 0 && wrong == 0, "%s unpacks as an install: %d files missing, %d not as listed (first %s)",
+          m.full.path, missing, wrong, first);
+    CHECK(files_exists(SCRATCH "/release/manifest.txt"), "and carries its manifest.txt");
+#ifndef _WIN32
+    struct stat st;
+    CHECK(stat(SCRATCH "/release/bin/client", &st) == 0 && (st.st_mode & 0100) &&
+              stat(SCRATCH "/release/bin/server", &st) == 0 && (st.st_mode & 0100),
+          "its executables are executable");
+#endif
+    files_remove_tree(SCRATCH "/release");
+
+    // what an update of the code brings: those files, by range, from the package as it lies
+    bool *wanted = calloc((size_t)m.count + 1, sizeof *wanted);
+    char url[1400];
+    snprintf(url, sizeof url, "file://%s%s/" RELEASE "/%s", here[0] == '/' ? "" : "/", here, m.full.path);
+    for (int i = 0; wanted && i < m.count; i++) wanted[i] = manifest_always_hashed(m.files[i].path);
+    files_make_directory(SCRATCH "/code");
+    enter(SCRATCH "/code");
+    uint64_t before = http_received();
+    bool ok = wanted && update_apply(&m, wanted, url, NULL, error, sizeof error);
+    uint64_t brought = http_received() - before;
+    enter(here);
+    CHECK(ok, "its code comes out of it alone (%s)", ok ? "" : error);
+    compare(&m, SCRATCH "/code", manifest_always_hashed, &missing, &wrong, &first);
+    CHECK(missing == 0 && wrong == 0 && brought * 4 < m.full.size,
+          "for %llu bytes of its %llu: %d files missing, %d not as listed (first %s)", (unsigned long long)brought,
+          (unsigned long long)m.full.size, missing, wrong, first);
+    files_remove_tree(SCRATCH "/code");
+    free(wanted);
+    manifest_free(&m);
 }
 
 void launcher_tests(void)
@@ -437,7 +610,7 @@ void launcher_tests(void)
     hash_tests();
     manifest_tests();
     archive_tests();
-    desktop_tests();
     update_tests();
+    release_tests();
     files_remove_tree(SCRATCH);
 }
