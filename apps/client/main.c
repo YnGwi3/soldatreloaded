@@ -200,6 +200,8 @@ typedef struct App {
     char chat_last[HUD_TEXT]; // the last line sent, for "//" to bring back
     int radio_cooldown;       // ticks before another radio call is heard (RadioCooldown)
     HudChatType chat_last_type;
+    char chat_aside[HUD_TEXT]; // the line a click closed the prompt on, back as the same prompt opens
+    HudChatType chat_aside_type; // (the original's FireChatText)
     Consoles consoles;        // the HUD's two consoles, fed from the game console's scrollback
     int console_scroll;       // how far back the big console is paged while a line is typed
     bool vote_reason_typing;  // the prompt takes a kick vote's reason (the kick window's OK)
@@ -470,7 +472,9 @@ static void chat_open(App *app, HudChatType type)
     HudData *d = &app->hud_data;
     if (d->chat_type != HUD_CHAT_NONE) return;
     d->chat_type = type;
-    snprintf(d->chat_text, sizeof d->chat_text, "%s", type == HUD_CHAT_COMMAND ? "/" : " ");
+    if (app->chat_aside[0] && app->chat_aside_type == type) snprintf(d->chat_text, sizeof d->chat_text, "%s", app->chat_aside);
+    else snprintf(d->chat_text, sizeof d->chat_text, "%s", type == HUD_CHAT_COMMAND ? "/" : " ");
+    app->chat_aside[0] = '\0';
     d->chat_cursor = (int)strlen(d->chat_text);
     d->chat_changed_at = app->time;
     app->chat_completing = 0;
@@ -484,6 +488,7 @@ static void chat_close(App *app)
     app->vote_reason_typing = false;
     app->hud_data.vote_reason_typing = false;
     app->hud_data.chat_text[0] = '\0';
+    app->chat_aside[0] = '\0';
     app->chat_completing = 0;
     app->console_scroll = 0;
     SDL_StopTextInput();
@@ -622,6 +627,18 @@ static bool chat_event(App *app, const SDL_Event *e)
         }
         chat_insert(app, str);
         return true;
+    }
+    // A click closes the prompt, its line put aside for the next of its kind, and goes on to
+    // the game: a T pressed by mistake doesn't keep me from shooting (the original's, for
+    // the left button; the right too here).
+    if (e->type == SDL_MOUSEBUTTONDOWN && (e->button.button == SDL_BUTTON_LEFT || e->button.button == SDL_BUTTON_RIGHT)) {
+        char line[HUD_TEXT];
+        snprintf(line, sizeof line, "%s", app->vote_reason_typing ? "" : text); // a kick's reason isn't a line
+        HudChatType type = d->chat_type;
+        chat_close(app);
+        snprintf(app->chat_aside, sizeof app->chat_aside, "%s", line);
+        app->chat_aside_type = type;
+        return false;
     }
     if (e->type == SDL_MOUSEWHEEL) { // the big console pages with the wheel
         app->console_scroll = clampi(app->console_scroll + (e->wheel.y > 0 ? 3 : -3), 0, consoles_scroll_max(&app->consoles));
