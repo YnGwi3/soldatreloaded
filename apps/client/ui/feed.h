@@ -35,6 +35,10 @@ typedef struct Feed {
 // theirs. `names` are the players' for the lines; `me` gets the big words about myself.
 void feed_tick(Feed *f, Console *con, const Game *g, const char names[MAX_PLAYERS][HUD_NAME], bool team_game, int me);
 
+// A big message of the client's own in the middle of the screen, for `ticks`: a map
+// being downloaded.
+void feed_say(Feed *f, const char *text, Rgba color, int ticks);
+
 // Into the HUD, each frame; `weapons` name the stats' lines.
 void feed_fill(const Feed *f, HudData *d, const Weapons *weapons);
 

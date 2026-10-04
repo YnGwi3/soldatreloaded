@@ -25,13 +25,14 @@
 
 #include "game/entities.h"
 
-#define NET_VERSION 19
+#define NET_VERSION 20
 #define NET_DEFAULT_PORT 23073
 #define NET_NAME_SIZE 24 // a player's name, with its terminator
 #define NET_PASSWORD_SIZE 32 // the server's password, with its terminator (sv_password, cl_password)
 #define NET_HWID_SIZE 12 // a player's hardware ID, eleven hex digits (net/hwid.h), with its terminator; empty for none
 #define NET_TEXT_SIZE 128 // a line of chat, a reason
 #define NET_MAP_SIZE 64  // a map's name, with its terminator
+#define NET_MAP_HASH 32  // a map's .pms, SHA-256
 #define NET_REASON_SIZE 26 // a kick vote's reason (the original's REASON_CHARS)
 #define NET_MTU 1200      // a packet, so that nothing is fragmented
 
@@ -159,6 +160,8 @@ typedef enum MsgKind {
     MSG_MAP_QUERY,    // client -> server: the name of the server's map list's n-th map, for the map window
     MSG_MAP_REPLY,    // server -> client: that name, and how many the list holds
     MSG_WEAPONS,      // server -> client: the weapons' numbers (a weapons mod), on joining and as they change
+    MSG_MAP_FETCH,    // client -> server: parts of the round's map, which it lacks
+    MSG_MAP_PART,     // server -> client: a part of it, packed (.smap)
     MSG_COUNT,
 } MsgKind;
 
@@ -187,7 +190,27 @@ typedef struct MsgMap {
     char map[NET_MAP_SIZE];
     char hostname[NET_NAME_SIZE]; // the server's, for the scoreboard
     bool rope;                    // whether the rope is allowed in this game (sv_rope)
+    uint8_t hash[NET_MAP_HASH];   // the map's .pms, SHA-256: a copy with another isn't this map; zeros for any
 } MsgMap;
+
+// A map the client lacks comes from the server, packed (a .smap, resources/mapfile.h), in
+// parts: the client asks for `count` of them from `part` on, keeping a few in flight, and
+// the server sends each. Both name the round, so a fetch of a map since changed is dropped.
+#define NET_MAP_PART 1000                // the bytes of a part, but the last
+#define NET_MAP_MAX (64u * 1024u * 1024u) // the largest packed map sent
+#define NET_MAP_FETCH_MAX 64              // the parts one fetch asks for, at most
+typedef struct MsgMapFetch {
+    uint16_t round;
+    uint32_t part, count;
+} MsgMapFetch;
+
+typedef struct MsgMapPart {
+    uint16_t round;
+    uint32_t total; // the packed map's bytes
+    uint32_t part;
+    uint16_t size;  // this part's bytes
+    uint8_t data[NET_MAP_PART];
+} MsgMapPart;
 
 // A vote as the HUD shows it: what is voted on and by whom, and how long it has. The
 // votes themselves are chat: /votemap, /votekick, /yes and /no, which the server reads.
@@ -268,6 +291,8 @@ void msg_map_change(NetBuf *b, MsgMapChange *m);
 void msg_map_query(NetBuf *b, MsgMapQuery *m);
 void msg_map_reply(NetBuf *b, MsgMapReply *m);
 void msg_weapons(NetBuf *b, MsgWeapons *m);
+void msg_map_fetch(NetBuf *b, MsgMapFetch *m);
+void msg_map_part(NetBuf *b, MsgMapPart *m);
 // The whole set of weapons as messages that each fit `size` bytes: each message's range
 // in turn, into `out` (as many as `max`); how many it took.
 int msg_weapons_fit(const WeaponStats stats[WEAPON_COUNT], size_t size, MsgWeapons *out, int max);

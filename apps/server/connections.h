@@ -117,6 +117,13 @@ typedef struct Connections {
     int32_t vote_cooldown[MAX_PLAYERS]; // ticks until each may start a vote; below 0 may
     char vote_map[NET_MAP_SIZE];   // a map vote passed (or an admin's /map), until the server takes it
     Lists lists;                   // the bans, the mutes and the admins (lists.h)
+    // The round's map as a player who lacks it is sent it: its .pms's hash, told with the
+    // map, and the map packed (a .smap), made when first asked for and kept for the round.
+    uint8_t map_hash[NET_MAP_HASH];
+    bool map_hashed;
+    uint8_t *map_pack;
+    size_t map_pack_size;
+    bool map_pack_failed; // tried this round, and couldn't
 } Connections;
 
 // `map` is the map being played, round 1. False if the streams couldn't be made.

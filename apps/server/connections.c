@@ -8,6 +8,8 @@
 #include <time.h>
 
 #include "game/systems/systems.h"
+#include "resources/mapfile.h"
+#include "sha256.h" // the launcher's, for the map's hash
 
 #if defined(__GNUC__) || defined(__clang__)
 __attribute__((format(printf, 2, 3)))
@@ -37,6 +39,24 @@ void connections_free(Connections *c)
 {
     free(c->streams);
     c->streams = NULL;
+    free(c->map_pack);
+    c->map_pack = NULL;
+}
+
+// The round's map, by its .pms's hash, for the Map to tell (once a round; zeros, which
+// a client takes as any copy, where the map wasn't read from a file).
+static void map_identify(Connections *c, const Game *g)
+{
+    if (c->map_hashed || !g || !g->ctx.map || !g->ctx.map->file.path[0]) return;
+    c->map_hashed = true;
+    size_t size = 0;
+    uint8_t *pms = mapfile_read(&g->ctx.map->file, &size);
+    if (!pms) return;
+    Sha256 s;
+    sha256_init(&s);
+    sha256_feed(&s, pms, size);
+    sha256_finish(&s, c->map_hash);
+    free(pms);
 }
 
 int connections_count(const Connections *c)
@@ -130,6 +150,7 @@ static void tell_map(Connections *c, ENetPeer *peer)
 {
     uint8_t buf[NET_MTU];
     MsgMap m = {.round = c->round, .rope = c->rope};
+    memcpy(m.hash, c->map_hash, sizeof m.hash);
     snprintf(m.map, sizeof m.map, "%s", c->map);
     snprintf(m.hostname, sizeof m.hostname, "%s", c->hostname);
     size_t n = build(buf, sizeof buf, MSG_MAP, route_map, &m);
@@ -276,6 +297,7 @@ static void hello(Connections *c, Game *g, ENetPeer *peer, const NetEvent *e)
     size_t n = build(buf, sizeof buf, MSG_WELCOME, route_welcome, &w);
     if (n) net_send(peer, MSG_WELCOME, buf, n);
     tell_weapons(c, peer, g); // the weapons as this server has them, before the world they are used in
+    map_identify(c, g);
     tell_map(c, peer); // joining is hearing of the round
     if (g->match.state == MATCH_ENDED) tell_map_change(c, peer, g); // and of its end, if it is ending
     c->vote.answer[slot] = 0;
@@ -323,6 +345,14 @@ void connections_new_round(Connections *c, Game *g, const char *map)
 {
     c->round++;
     snprintf(c->map, sizeof c->map, "%s", map);
+    // the new map's hash, and its package made anew when first asked for
+    memset(c->map_hash, 0, sizeof c->map_hash);
+    c->map_hashed = false;
+    free(c->map_pack);
+    c->map_pack = NULL;
+    c->map_pack_size = 0;
+    c->map_pack_failed = false;
+    map_identify(c, g);
     c->rope = g->world.rules.rope; // what the next map says of the rope, to every client
     wire_queue_init(&c->events); // the old round's news is nobody's now
     for (int i = 0; i < MAX_PLAYERS; i++) {
@@ -458,6 +488,43 @@ static void map_query(Connections *c, ENetPeer *peer, const NetEvent *e)
     if (n) net_send(peer, MSG_MAP_REPLY, buf, n);
 }
 
+static void route_map_part(NetBuf *b, void *m) { msg_map_part(b, m); }
+
+// A player who lacks the round's map asks for parts of it: each is sent, out of the map
+// packed (mapfile_pack), made on the first ask and kept for the round.
+static void map_fetch(Connections *c, const Game *g, ENetPeer *peer, const NetEvent *e)
+{
+    NetBuf b = netbuf_reader(e->data, e->size);
+    MsgKind kind;
+    MsgMapFetch f = {0};
+    msg_kind(&b, &kind);
+    msg_map_fetch(&b, &f);
+    if (!netbuf_done(&b) || f.round != c->round) return; // a fetch of a map since changed
+    if (!c->map_pack && !c->map_pack_failed) {
+        size_t size = 0;
+        c->map_pack = g->ctx.map && g->ctx.map->file.path[0] ? mapfile_pack(&g->ctx.map->file, g->ctx.map, &size) : NULL;
+        if (c->map_pack && size > NET_MAP_MAX) {
+            free(c->map_pack);
+            c->map_pack = NULL;
+        }
+        c->map_pack_size = c->map_pack ? size : 0;
+        c->map_pack_failed = !c->map_pack;
+        if (c->map_pack) say(c->console, "sending %s (%zu KB) to the players who lack it\n", c->map, (c->map_pack_size + 1023) / 1024);
+        else say(c->console, "%s can't be sent to the players who lack it\n", c->map);
+    }
+    if (!c->map_pack) return;
+    for (uint32_t i = 0; i < f.count; i++) {
+        size_t at = (size_t)(f.part + i) * NET_MAP_PART;
+        if (at >= c->map_pack_size) break;
+        MsgMapPart p = {.round = c->round, .total = (uint32_t)c->map_pack_size, .part = f.part + i};
+        p.size = (uint16_t)(c->map_pack_size - at < NET_MAP_PART ? c->map_pack_size - at : NET_MAP_PART);
+        memcpy(p.data, c->map_pack + at, p.size);
+        uint8_t buf[NET_MTU];
+        size_t n = build(buf, sizeof buf, MSG_MAP_PART, route_map_part, &p);
+        if (n) net_send(peer, MSG_MAP_PART, buf, n);
+    }
+}
+
 void connections_set_password(Connections *c, const char *password)
 {
     snprintf(c->password, sizeof c->password, "%s", password ? password : "");
@@ -487,6 +554,7 @@ void connections_poll(Connections *c, Game *g)
             else if (e.msg == MSG_CHAT) chat(c, g, e.peer, &e);
             else if (e.msg == MSG_CLIENT_STATE) server_stream_receive(&c->streams[slot], g, slot, e.data, e.size);
             else if (e.msg == MSG_MAP_QUERY) map_query(c, e.peer, &e);
+            else if (e.msg == MSG_MAP_FETCH) map_fetch(c, g, e.peer, &e);
             break;
         }
         default: break;

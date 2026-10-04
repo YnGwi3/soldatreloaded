@@ -7,6 +7,7 @@
 #include "console/console.h"
 #include "network/stream.h"
 #include "network/transport.h"
+#include "resources/mapfile.h"
 
 #define CLIENT_NET_INBOX 8 // lines of chat kept between frames; past that the oldest is lost
 
@@ -44,6 +45,23 @@ typedef struct ClientNet {
     // in every world made for its maps (client_net_weapons).
     WeaponStats weapons[WEAPON_COUNT];
     bool weapons_heard;
+    // The round's map as found here (data_dir's, loose or packed, the one the server's
+    // hash names), for the world to be made of; and one being fetched from the server
+    // because it isn't here, or not as the server has it. Snapshots wait while it comes,
+    // and nothing is said of a soldier: the server holds it still.
+    char data_dir[256];
+    MapFile map_file;
+    struct {
+        bool on;
+        uint16_t round;
+        char name[NET_MAP_SIZE];
+        uint8_t hash[NET_MAP_HASH];
+        uint8_t *data;   // the packed map as it comes
+        uint32_t total;  // its bytes, as the first part said; 0 before
+        uint32_t next;   // the part awaited
+        uint32_t asked;  // the parts asked for, from the first
+        int told;        // the quarters of it said on the console
+    } fetch;
     // Told of every message the line brings, before it is heard: a demo records them.
     void (*tap)(void *user, const uint8_t *data, size_t size, MsgKind kind);
     void *tap_user;

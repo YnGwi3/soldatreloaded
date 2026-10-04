@@ -747,6 +747,7 @@ static void demo_tap(void *user, const uint8_t *data, size_t size, MsgKind kind)
     App *app = user;
     if (!demo_recording(&app->recorder)) return;
     if (kind == MSG_MAP) demo_stop_recording(app);
+    else if (kind == MSG_MAP_PART) return; // a map being fetched is no part of the game
     else demo_record_packet(&app->recorder, data, size);
 }
 
@@ -1420,7 +1421,13 @@ static void apply_cvars(App *app)
 static bool game_open(App *app, bool local)
 {
     app->game = calloc(1, sizeof(Game));
-    if (!app->game || !context_load(&app->game->ctx, app->data->value, app->hosting.map->value)) return false;
+    if (!app->game) return false;
+    // a server's map as found here by its hash, or fetched (net/client_net.h); else by name
+    const MapFile *file = &app->net.map_file;
+    bool found = !local && file->path[0] && strcmp(file->name, app->hosting.map->value) == 0;
+    if (found ? !context_load_from(&app->game->ctx, app->data->value, file)
+              : !context_load(&app->game->ctx, app->data->value, app->hosting.map->value))
+        return false;
 
     Game *g = app->game;
     MatchSettings settings = match_settings_for_map(g->ctx.map);
@@ -2325,6 +2332,7 @@ int main(int argc, char *argv[])
     http_init();
     http_set_agent("soldatreloaded/" SOLDATRELOADED_VERSION);
     if (!console_open(&app, argc, argv)) return 1;
+    snprintf(app.net.data_dir, sizeof app.net.data_dir, "%s", app.data->value); // where a server's map is found, or fetched into
     mod_init(&app.mod, MOD_ROOT, app.mod_name->value); // what it looks and sounds like, as the config says
     consoles_init(&app.consoles, app.console_length->integer);
     app.seen_life = -1;
@@ -2388,6 +2396,14 @@ int main(int argc, char *argv[])
         }
         client_net_poll(&app.net, app.console, app.game);
         net_take(&app);
+        if (app.net.fetch.on) { // a server's map coming, until the world is made of it
+            uint32_t total = app.net.fetch.total;
+            uint64_t got = (uint64_t)app.net.fetch.next * NET_MAP_PART;
+            char text[96];
+            snprintf(text, sizeof text, "Downloading %s... %u%%", app.net.fetch.name,
+                     total ? (unsigned)((got > total ? total : got) * 100 / total) : 0u);
+            feed_say(&app.feed, text, (Rgba){245, 245, 245, 255}, TICK_RATE / 2);
+        }
         discord_update(&app);
         // A demo: begun as `record` asked, or by demo_autorecord once a round; stopped
         // when the line is lost; the frame's packets marked as all in, before its ticks.

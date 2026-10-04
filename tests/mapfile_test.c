@@ -6,9 +6,12 @@
 #include <string.h>
 
 #include "files.h" // the launcher's
+#include "host.h"
+#include "net/client_net.h"
 #include "test.h"
 
 #define SCRATCH "build/test-mapfile"
+#define FETCH_PORT 40061
 
 static bool write_file(const char *path, const void *data, size_t size)
 {
@@ -21,6 +24,7 @@ static bool write_file(const char *path, const void *data, size_t size)
 
 static void packed_map(void)
 {
+    files_remove_tree(SCRATCH); // what a run cut short left
     // ctf_Ash packed, as a server sends it, into a data folder of its own
     MapFile loose[2];
     CHECK(mapfile_find(TEST_DATA, "ctf_Ash", loose) == 1 && !loose[0].packed, "ctf_Ash lies loose in the game's data");
@@ -84,4 +88,54 @@ static void packed_map(void)
     files_remove_tree(SCRATCH);
 }
 
-void mapfile_tests(void) { packed_map(); }
+// A client joining a server playing a map it lacks, and one whose copy of the map is
+// another version, is sent the server's, packed, and makes its world of it.
+static void map_fetched(void)
+{
+    CHECK(net_init(), "ENet starts");
+    static Host host;
+    HostSettings settings = {.port = FETCH_PORT, .mode = MATCH_DEATHMATCH, .hostname = "fetch test", .quiet = true};
+    snprintf(settings.data, sizeof settings.data, "%s", TEST_DATA);
+    snprintf(settings.map, sizeof settings.map, "Arena");
+    if (!host_open(&host, NULL, &settings)) {
+        CHECK(false, "a host on port %d", FETCH_PORT);
+        return;
+    }
+    // the client's data folder: no Arena at all, then an Arena that isn't the server's
+    for (int pass = 0; pass < 2; pass++) {
+        files_remove_tree(SCRATCH);
+        if (pass == 1) write_file(SCRATCH "/maps/Arena.pms", "not the server's Arena", 22);
+        else files_make_parents(SCRATCH "/maps/x"); // maps/ itself, empty
+        Console *con = console_create(NULL, NULL);
+        static ClientNet client;
+        client_net_init(&client);
+        snprintf(client.data_dir, sizeof client.data_dir, "%s", SCRATCH);
+        client_net_connect(&client, con, "127.0.0.1", FETCH_PORT, "Fetcher", "");
+        bool fetching = false;
+        for (int i = 0; i < 2000 && !client.mapped; i++) {
+            host_pump(&host, TICK_SECONDS);
+            client_net_poll(&client, con, NULL);
+            fetching |= client.fetch.on;
+        }
+        CHECK(fetching && client.mapped && client.map_file.packed && client.state == CLIENT_NET_JOINED,
+              "%s, the client is sent the server's map and keeps its line (%s)", pass ? "with another Arena here" : "with no Arena here",
+              client.map_file.path);
+        Context ctx = {0};
+        bool made = client.mapped && context_load_from(&ctx, TEST_DATA, &client.map_file);
+        CHECK(made && ctx.map->poly_count == host.game->ctx.map->poly_count, "and its world is made of it: the server's Arena (%d polys)",
+              made ? ctx.map->poly_count : 0);
+        if (made) context_destroy(&ctx);
+        client_net_disconnect(&client, con);
+        client_stream_free(&client.stream);
+        console_destroy(con);
+    }
+    files_remove_tree(SCRATCH);
+    host_close(&host);
+    net_shutdown();
+}
+
+void mapfile_tests(void)
+{
+    packed_map();
+    map_fetched();
+}

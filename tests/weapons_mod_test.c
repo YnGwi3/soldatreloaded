@@ -170,6 +170,7 @@ void weapons_mod_tests(void)
     Console *con = console_create(NULL, NULL);
     static ClientNet client;
     client_net_init(&client);
+    snprintf(client.data_dir, sizeof client.data_dir, "%s", TEST_DATA);
     client_net_connect(&client, con, "127.0.0.1", PORT, "Tester", "");
     for (int i = 0; i < 300 && !client.weapons_heard; i++) {
         host_pump(&host, TICK_SECONDS);

@@ -3,9 +3,13 @@
 #include "ui/hud_data.h" // the colours of the line's word
 
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 
 #include "game/systems/systems.h"
+#include "sha256.h" // the launcher's, for a map's hash
+
+static void fetch_stop(ClientNet *n);
 
 bool client_net_init(ClientNet *n)
 {
@@ -33,6 +37,7 @@ void client_net_connect(ClientNet *n, Console *con, const char *address, uint16_
     n->state = CLIENT_NET_CONNECTING;
     n->slot = -1;
     n->had_map = false;
+    fetch_stop(n);
     n->map_changing = n->map_replied = false;
     n->weapons_heard = false; // a new server says its own
     n->vote = (MsgVote){.kind = VOTE_NONE};
@@ -55,7 +60,159 @@ void client_net_disconnect(ClientNet *n, Console *con)
     n->state = CLIENT_NET_OFF;
     n->slot = -1;
     n->vote.kind = VOTE_NONE;
+    fetch_stop(n);
     console_print(con, "disconnected\n");
+}
+
+// --- the round's map: here, or fetched ---------------------------------------------
+
+#define FETCH_AHEAD 64 // parts asked for ahead of the one awaited: some 64 KB in flight
+#define FETCH_STEP 32  // asked for again once this many of them have come
+
+static void fetch_stop(ClientNet *n)
+{
+    free(n->fetch.data);
+    memset(&n->fetch, 0, sizeof n->fetch);
+}
+
+static bool hash_any(const uint8_t hash[NET_MAP_HASH])
+{
+    for (int i = 0; i < NET_MAP_HASH; i++)
+        if (hash[i]) return false;
+    return true;
+}
+
+// Whether the map in `f` is the one the server's hash names.
+static bool map_matches(const MapFile *f, const uint8_t hash[NET_MAP_HASH])
+{
+    if (hash_any(hash)) return true;
+    size_t size = 0;
+    uint8_t *pms = mapfile_read(f, &size);
+    if (!pms) return false;
+    uint8_t mine[32];
+    Sha256 s;
+    sha256_init(&s);
+    sha256_feed(&s, pms, size);
+    sha256_finish(&s, mine);
+    free(pms);
+    return memcmp(mine, hash, sizeof mine) == 0;
+}
+
+// The map the server named, as it has it, among this data folder's: loose, then packed.
+static bool map_here(ClientNet *n, const char *name, const uint8_t hash[NET_MAP_HASH])
+{
+    MapFile found[2];
+    int count = mapfile_find(n->data_dir, name, found);
+    for (int i = 0; i < count; i++) {
+        if (!map_matches(&found[i], hash)) continue;
+        n->map_file = found[i];
+        return true;
+    }
+    return false;
+}
+
+static void route_map_fetch(NetBuf *b, void *m) { msg_map_fetch(b, m); }
+
+static void fetch_ask(ClientNet *n, uint32_t count)
+{
+    MsgMapFetch f = {.round = n->fetch.round, .part = n->fetch.asked, .count = count};
+    uint8_t buf[NET_MTU];
+    NetBuf b = netbuf_writer(buf, sizeof buf);
+    MsgKind kind = MSG_MAP_FETCH;
+    msg_kind(&b, &kind);
+    route_map_fetch(&b, &f);
+    if (!netbuf_ok(&b)) return;
+    net_send(n->link.peer, MSG_MAP_FETCH, buf, netbuf_bytes(&b));
+    n->fetch.asked += count;
+}
+
+static void fetch_start(ClientNet *n, Console *con, const MsgMap *m)
+{
+    fetch_stop(n);
+    n->fetch.on = true;
+    n->fetch.round = m->round;
+    snprintf(n->fetch.name, sizeof n->fetch.name, "%s", m->map);
+    memcpy(n->fetch.hash, m->hash, sizeof n->fetch.hash);
+    console_print_color(con, HUD_COLOR_CLIENT, "Downloading map %s...\n", m->map);
+    fetch_ask(n, FETCH_AHEAD);
+}
+
+static void fetch_fail(ClientNet *n, Console *con, const char *why)
+{
+    console_print_color(con, HUD_COLOR_WARNING, "Couldn't download map %s: %s\n", n->fetch.name, why);
+    fetch_stop(n);
+    client_net_disconnect(n, con);
+}
+
+// The packed map whole: written beside the others as <name>.smap, once its .pms is the
+// one the server named, and the world made of it.
+static void fetch_done(ClientNet *n, Console *con)
+{
+    char maps[MAPFILE_PATH], part[MAPFILE_PATH + NET_MAP_SIZE + 16], final[MAPFILE_PATH + NET_MAP_SIZE + 16];
+    path_join(maps, sizeof maps, n->data_dir, "maps", NULL);
+    snprintf(part, sizeof part, "%s/%s%s.part", maps, n->fetch.name, MAPFILE_EXT);
+    snprintf(final, sizeof final, "%s/%s%s", maps, n->fetch.name, MAPFILE_EXT);
+    FILE *f = fopen(part, "wb");
+    bool written = f && fwrite(n->fetch.data, 1, n->fetch.total, f) == n->fetch.total;
+    if (f && fclose(f) != 0) written = false;
+    if (!written) {
+        remove(part);
+        fetch_fail(n, con, "it couldn't be written into data/maps/");
+        return;
+    }
+    MapFile got = {.packed = true};
+    snprintf(got.path, sizeof got.path, "%s", part);
+    snprintf(got.data, sizeof got.data, "%s", n->data_dir);
+    snprintf(got.name, sizeof got.name, "%s", n->fetch.name);
+    if (!map_matches(&got, n->fetch.hash)) {
+        remove(part);
+        fetch_fail(n, con, "what came isn't the server's map");
+        return;
+    }
+    remove(final); // a .smap of that name, another version of the map
+    if (rename(part, final) != 0) {
+        remove(part);
+        fetch_fail(n, con, "it couldn't be put in data/maps/");
+        return;
+    }
+    snprintf(got.path, sizeof got.path, "%s", final);
+    n->map_file = got;
+    console_print_color(con, HUD_COLOR_CLIENT, "Downloaded map %s (%u KB)\n", n->fetch.name, (unsigned)((n->fetch.total + 1023) / 1024));
+    fetch_stop(n);
+    n->mapped = true; // the world is made of it now
+}
+
+static void fetch_part(ClientNet *n, Console *con, const MsgMapPart *p)
+{
+    if (!n->fetch.on || p->round != n->fetch.round || p->part != n->fetch.next) return;
+    if (!n->fetch.data) {
+        if (p->total == 0 || p->total > NET_MAP_MAX) {
+            fetch_fail(n, con, "the server's map is too large");
+            return;
+        }
+        n->fetch.data = malloc(p->total);
+        if (!n->fetch.data) {
+            fetch_fail(n, con, "out of memory");
+            return;
+        }
+        n->fetch.total = p->total;
+    }
+    size_t at = (size_t)p->part * NET_MAP_PART;
+    if (p->total != n->fetch.total || at + p->size > n->fetch.total) return;
+    memcpy(n->fetch.data + at, p->data, p->size);
+    n->fetch.next++;
+    size_t got = at + p->size;
+    int quarter = (int)(got * 4 / n->fetch.total);
+    if (quarter > n->fetch.told && quarter < 4) {
+        n->fetch.told = quarter;
+        console_print_color(con, HUD_COLOR_CLIENT, "Downloading map %s: %d%%\n", n->fetch.name, quarter * 25);
+    }
+    if (got == n->fetch.total) {
+        fetch_done(n, con);
+        return;
+    }
+    uint32_t parts = (n->fetch.total + NET_MAP_PART - 1) / NET_MAP_PART;
+    if (n->fetch.asked < parts && n->fetch.asked - n->fetch.next <= FETCH_AHEAD - FETCH_STEP) fetch_ask(n, FETCH_STEP);
 }
 
 static void send_hello(ClientNet *n)
@@ -102,9 +259,21 @@ static void heard(ClientNet *n, Console *con, Game *g, const uint8_t *data, size
         snprintf(n->map, sizeof n->map, "%s", m.map);
         snprintf(n->hostname, sizeof n->hostname, "%s", m.hostname);
         n->rope = m.rope;
-        n->mapped = true;
         client_stream_reset(&n->stream, m.round);
         n->had_map = true;
+        // the world is made of the map here, or of the server's once it has come; a demo
+        // plays on whatever copy of its map is here
+        fetch_stop(n);
+        memset(&n->map_file, 0, sizeof n->map_file);
+        if (map_here(n, m.map, m.hash) || n->playback) n->mapped = true;
+        else fetch_start(n, con, &m);
+        break;
+    }
+    case MSG_MAP_PART: {
+        static MsgMapPart m; // a part's bytes
+        memset(&m, 0, sizeof m);
+        msg_map_part(&b, &m);
+        if (netbuf_done(&b)) fetch_part(n, con, &m);
         break;
     }
     case MSG_MAP_CHANGE: { // the round is over: said as the original's ClientHandleMapChange says it
@@ -160,7 +329,7 @@ static void heard(ClientNet *n, Console *con, Game *g, const uint8_t *data, size
         break;
     }
     case MSG_SNAPSHOT:
-        if (n->state == CLIENT_NET_JOINED && n->round && !n->mapped && g) client_stream_hear(&n->stream, g, n->slot, data, size);
+        if (n->state == CLIENT_NET_JOINED && n->round && !n->mapped && !n->fetch.on && g) client_stream_hear(&n->stream, g, n->slot, data, size);
         break;
     default: break;
     }
@@ -180,6 +349,7 @@ void client_net_poll(ClientNet *n, Console *con, Game *g)
             net_close(&n->link);
             n->state = CLIENT_NET_OFF;
             n->slot = -1;
+            fetch_stop(n);
             return;
         case NET_EVENT_MESSAGE:
             if (n->tap) n->tap(n->tap_user, e.data, e.size, e.msg);
@@ -227,10 +397,12 @@ void client_net_feed(ClientNet *n, Console *con, Game *g, const uint8_t *data, s
 
 // Joined to a server, with a line to say things down: not a demo's playback.
 static bool live(const ClientNet *n) { return n->state == CLIENT_NET_JOINED && !n->playback; }
+// joined and with the round's world: not while its map is fetched
+static bool playing(const ClientNet *n) { return live(n) && !n->fetch.on; }
 
 void client_net_tick(ClientNet *n, const Game *g)
 {
-    if (!live(n)) return;
+    if (!playing(n)) return; // the world being fetched has nothing to say of me
     client_stream_collect(&n->stream, g, n->slot);
     const Soldier *me = &g->world.soldiers[n->slot];
     if (!me->active) return; // nothing to say of a soldier the server hasn't placed yet

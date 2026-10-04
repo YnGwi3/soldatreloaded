@@ -20,6 +20,8 @@ const bool MSG_RELIABLE[MSG_COUNT] = {
     [MSG_MAP_QUERY] = true,
     [MSG_MAP_REPLY] = true,
     [MSG_WEAPONS] = true,
+    [MSG_MAP_FETCH] = true,
+    [MSG_MAP_PART] = true,
 };
 
 void msg_kind(NetBuf *b, MsgKind *kind)
@@ -60,6 +62,25 @@ void msg_map(NetBuf *b, MsgMap *m)
     net_string(b, m->map, sizeof m->map);
     net_string(b, m->hostname, sizeof m->hostname);
     net_bool(b, &m->rope);
+    for (int i = 0; i < NET_MAP_HASH; i++) net_u8(b, &m->hash[i]);
+}
+
+void msg_map_fetch(NetBuf *b, MsgMapFetch *m)
+{
+    net_u16(b, &m->round);
+    net_range(b, &m->part, NET_MAP_MAX / NET_MAP_PART);
+    net_range(b, &m->count, NET_MAP_FETCH_MAX);
+}
+
+void msg_map_part(NetBuf *b, MsgMapPart *m)
+{
+    net_u16(b, &m->round);
+    net_range(b, &m->total, NET_MAP_MAX);
+    net_range(b, &m->part, NET_MAP_MAX / NET_MAP_PART);
+    uint32_t size = m->size;
+    net_range(b, &size, NET_MAP_PART);
+    m->size = (uint16_t)size;
+    for (uint16_t i = 0; i < m->size && netbuf_ok(b); i++) net_u8(b, &m->data[i]);
 }
 
 void msg_vote(NetBuf *b, MsgVote *m)

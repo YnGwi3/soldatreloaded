@@ -76,6 +76,8 @@ static void big_message(Feed *f, const char *text, Rgba color, int delay)
     f->big[1].centered = true;
 }
 
+void feed_say(Feed *f, const char *text, Rgba color, int ticks) { big_message(f, text, color, ticks); }
+
 // The kill console's colours (the original's *_K_ and *_D_MESSAGE_COLOR): the killer's
 // line by its team, the victim's by its; with no teams the killer green and the victim
 // dark red; a suicide the spectator's gold.

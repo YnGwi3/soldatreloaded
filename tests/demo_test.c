@@ -188,6 +188,7 @@ void demo_tests(void)
     static Seen recorded[RECORDED];
     memset(&live, 0, sizeof live);
     client_net_init(&live.net);
+    snprintf(live.net.data_dir, sizeof live.net.data_dir, "%s", TEST_DATA);
     client_net_connect(&live.net, con, "127.0.0.1", PORT, "Recorder", "");
     static DemoRecorder rec;
     memset(&rec, 0, sizeof rec);
@@ -232,6 +233,7 @@ void demo_tests(void)
               "its header says its ticks (%u), my slot and the map", player.header.ticks);
         memset(&played, 0, sizeof played);
         client_net_init(&played.net);
+        snprintf(played.net.data_dir, sizeof played.net.data_dir, "%s", TEST_DATA);
         client_net_play(&played.net, player.header.slot);
         Played run = play(&player, &played, con, recorded, ticks);
         CHECK(run.at == ticks, "every tick played (%d of %d)", run.at, ticks);

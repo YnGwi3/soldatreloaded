@@ -141,6 +141,15 @@ default) can be reached from outside. A script in `scripts/main.lua` runs with i
 write; the examples in `scripts/examples/` show what a script can do, and `main.lua` names
 them, ready to take up (docs/scripting.md).
 
+### Custom maps
+
+Put a custom map in `data/maps/`, either as OpenSoldat passes them around, a `.smap`
+holding the map and its own textures and scenery, or as a loose `.pms` with its texture in
+`data/textures/` and its scenery in `data/scenery-gfx/`. Name it in the rotation as any
+other. A player who joins without it, or with another version of it, is sent it by the
+server over the game's own connection, nothing else to open, and plays it once it has
+come; it is kept in their `data/maps/` as a `.smap`.
+
 ## Building
 
 You need [xmake](https://xmake.io) and a C compiler: Visual Studio's on Windows, gcc or
