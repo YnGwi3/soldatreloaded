@@ -782,10 +782,9 @@ static void demo_start_playback(App *app)
         return;
     }
     const DemoHeader *h = &app->player.header;
-    char file[NET_MAP_SIZE + 8], map[512];
-    snprintf(file, sizeof file, "%s.pms", h->map);
-    path_join(map, sizeof map, app->data->value, "maps", file);
-    if (!file_exists(map)) { // its world couldn't be made: it isn't played
+    char maps[512];
+    path_join(maps, sizeof maps, app->data->value, "maps", NULL);
+    if (!mapfile_exists(maps, h->map)) { // its world couldn't be made: it isn't played
         console_print_color(app->console, HUD_COLOR_WARNING, "the demo's map %s is not here\n", h->map);
         demo_play_close(&app->player);
         return;
@@ -2333,7 +2332,7 @@ int main(int argc, char *argv[])
     {
         char dir[512];
         snprintf(dir, sizeof dir, "%s/maps", app.data->value);
-        app.map_count = list_files(dir, ".pms", app.maps, (int)(sizeof app.maps / sizeof app.maps[0]));
+        app.map_count = mapfile_list(dir, app.maps, (int)(sizeof app.maps / sizeof app.maps[0]));
     }
     if (!game_open(&app, true)) {
         fprintf(stderr, "could not load map '%s' from '%s'\nusage: client +data <dir> +map <name>\n",

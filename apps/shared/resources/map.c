@@ -299,15 +299,21 @@ MapError map_load(Map *m, const uint8_t *data, size_t size)
 
 bool map_load_file(Map *m, const char *base_dir, const char *map_name)
 {
-    char file[256];
-    char path[512];
-    snprintf(file, sizeof(file), "%s.pms", map_name);
-    path_join(path, sizeof(path), base_dir, "maps", file);
+    MapFile found[2];
+    if (mapfile_find(base_dir, map_name, found) == 0) {
+        fprintf(stderr, "failed to read %s/maps/%s: no .pms or %s\n", base_dir, map_name, MAPFILE_EXT);
+        memset(m, 0, sizeof(*m));
+        return false;
+    }
+    return map_load_from(m, &found[0]);
+}
 
+bool map_load_from(Map *m, const MapFile *f)
+{
     size_t size = 0;
-    uint8_t *data = file_read_all(path, &size);
+    uint8_t *data = mapfile_read(f, &size);
     if (!data) {
-        fprintf(stderr, "failed to read %s\n", path);
+        fprintf(stderr, "failed to read %s\n", f->path);
         memset(m, 0, sizeof(*m));
         return false;
     }
@@ -315,9 +321,10 @@ bool map_load_file(Map *m, const char *base_dir, const char *map_name)
     MapError err = map_load(m, data, size);
     free(data);
     if (err) {
-        fprintf(stderr, "failed to load map %s: %s\n", path, map_error_name(err));
+        fprintf(stderr, "failed to load map %s: %s\n", f->path, map_error_name(err));
         return false;
     }
+    m->file = *f;
     return true;
 }
 

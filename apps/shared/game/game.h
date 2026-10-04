@@ -126,6 +126,8 @@ typedef struct Game {
 // The map, animations, skeletons and default weapons from a data folder
 // (the layout of opensoldat's base: maps/, anims/, objects/). Reports failures on stderr.
 bool context_load(Context *ctx, const char *base_dir, const char *map_name);
+// The same with the map as found (mapfile_find): a client's, picked by its hash.
+bool context_load_from(Context *ctx, const char *base_dir, const MapFile *map_file);
 void context_destroy(Context *ctx);
 
 // --- World -------------------------------------------------------------------------

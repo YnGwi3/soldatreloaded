@@ -6,6 +6,7 @@
 // casts, the polygon tests, which polygons a team passes. Ported from OpenSoldat
 // MapFile.pas / PolyMap.pas by way of soldat-odin's shared/polymap.
 
+#include "resources/mapfile.h"
 #include "utils/utils.h"
 
 // The teams as the map knows them: whose a team polygon is, whose a spawn point. The
@@ -146,6 +147,7 @@ typedef struct Map {
     int prop_count;
     char (*scenery)[MAP_SCENERY_NAME_SIZE + 1]; // image names props refer to by 1-based style
     int scenery_count;
+    MapFile file; // where it was read from, and its own art with it (mapfile.h)
 } Map;
 
 typedef enum MapError {
@@ -164,9 +166,11 @@ typedef enum MapError {
 // Parses .pms bytes into an empty map. On error the map is left empty.
 MapError map_load(Map *m, const uint8_t *data, size_t size);
 
-// A map from the data folder by name, <base_dir>/maps/<name>.pms. Reports
-// failures on stderr.
+// A map from the data folder by name, loose (<base_dir>/maps/<name>.pms) or else packed
+// (<name>.smap). Reports failures on stderr.
 bool map_load_file(Map *m, const char *base_dir, const char *map_name);
+// The map in `f`, as found (mapfile_find). Reports failures on stderr.
+bool map_load_from(Map *m, const MapFile *f);
 
 void map_destroy(Map *m);
 const char *map_error_name(MapError err);

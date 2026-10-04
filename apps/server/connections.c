@@ -547,12 +547,7 @@ static bool map_exists(const Connections *c, const char *map)
         return false;
     }
     if (!c->maps_dir[0]) return true;
-    if (!map[0] || strchr(map, '/') || strchr(map, '\\') || strstr(map, "..")) return false;
-    char path[600];
-    snprintf(path, sizeof path, "%s/%s.pms", c->maps_dir, map);
-    FILE *f = fopen(path, "rb");
-    if (f) fclose(f);
-    return f != NULL;
+    return mapfile_exists(c->maps_dir, map);
 }
 
 // The player a kick names, a bot among them as in the original: a slot's number, or a

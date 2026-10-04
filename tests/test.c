@@ -182,6 +182,7 @@ int main(void)
     bink_tests();
     lists_tests();
     weapons_mod_tests();
+    mapfile_tests();
     printf("%d checks, %d failed\n", checks, failures);
     return failures != 0;
 }

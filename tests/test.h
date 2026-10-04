@@ -78,6 +78,7 @@ void stream_tests(void);
 void rewind_tests(void);
 void console_tests(void);
 void taunt_tests(void);
+void mapfile_tests(void);
 void color_tests(void);
 void bot_tests(void);
 void round_tests(void);

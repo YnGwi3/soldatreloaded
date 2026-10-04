@@ -304,6 +304,20 @@ bool gfx_texture_load(GfxTexture *tex, const char *path, const Rgba *key)
     return tex->handle != 0;
 }
 
+bool gfx_texture_load_memory(GfxTexture *tex, const uint8_t *data, size_t size, const Rgba *key)
+{
+    *tex = (GfxTexture){0};
+    GfxImage img = {0};
+    int channels = 0;
+    if (!data || size == 0 || size > INT32_MAX) return false;
+    img.rgba = stbi_load_from_memory(data, (int)size, &img.width, &img.height, &channels, 4);
+    if (!img.rgba) return false;
+    if (key) gfx_image_color_key(&img, *key);
+    *tex = gfx_texture_create(img.width, img.height, img.rgba);
+    gfx_image_free(&img);
+    return tex->handle != 0;
+}
+
 void gfx_texture_wrap(GfxTexture tex, bool repeat)
 {
     if (!tex.handle) return;

@@ -123,10 +123,9 @@ bool host_open(Host *h, Console *console, const HostSettings *settings)
             if (!*p) break;
             const char *start = p;
             while (*p && *p != ' ' && *p != ',' && *p != '\t') p++;
-            char name[64], path[600];
+            char name[64];
             snprintf(name, sizeof name, "%.*s", (int)(p - start), start);
-            snprintf(path, sizeof path, "%s/%s.pms", h->connections.maps_dir, name);
-            if (!files_exists(path)) {
+            if (!mapfile_exists(h->connections.maps_dir, name)) {
                 if (h->console) console_print(h->console, "the rotation's %s isn't in %s: passed over\n", name,
                                               h->connections.maps_dir);
                 continue;
@@ -136,7 +135,7 @@ bool host_open(Host *h, Console *console, const HostSettings *settings)
         }
         if (h->map_count == 0) {
             h->settings.maps[0] = '\0';
-            h->map_count = list_files(h->connections.maps_dir, ".pms", h->maps, HOST_MAX_MAPS);
+            h->map_count = mapfile_list(h->connections.maps_dir, h->maps, HOST_MAX_MAPS);
         }
         h->connections.maps = (const char (*)[64])h->maps;
         h->connections.map_count = h->map_count;

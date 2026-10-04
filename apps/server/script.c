@@ -439,12 +439,7 @@ static int l_paused(lua_State *L)
 static bool map_there(const Host *h, const char *map)
 {
     if (!h->connections.maps_dir[0]) return true;
-    if (!map[0] || strchr(map, '/') || strchr(map, '\\') || strstr(map, "..")) return false;
-    char path[600];
-    snprintf(path, sizeof path, "%s/%s.pms", h->connections.maps_dir, map);
-    FILE *f = fopen(path, "rb");
-    if (f) fclose(f);
-    return f != NULL;
+    return mapfile_exists(h->connections.maps_dir, map);
 }
 
 // server.next_map([map]): the round ends now, on `map` if given, else the rotation's next.

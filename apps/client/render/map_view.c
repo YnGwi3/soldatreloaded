@@ -42,7 +42,7 @@ void map_view_load(MapView *v, const Mod *mod, const Map *map)
 {
     map_view_unload(v);
     v->map = map;
-    v->texture = map_texture_load(mod, map->texture);
+    v->texture = map_texture_load(mod, map);
     v->scenery = scenery_load(mod, map);
     polys_build(&v->polys, map);
 }

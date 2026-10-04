@@ -87,6 +87,7 @@ target("shared")
     add_files("apps/shared/**.c")
     add_includedirs("apps/shared", {public = true})
     add_packages("enet", {public = true}) -- the transport (shared/network) is ENet's
+    add_packages("miniz", {public = true}) -- a packed map (.smap) is a zip (resources/mapfile.h)
     if not is_plat("windows") then
         add_syslinks("m", {public = true})
     end

@@ -1,5 +1,6 @@
 #include "game/game.h"
 
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -10,11 +11,22 @@
 
 bool context_load(Context *ctx, const char *base_dir, const char *map_name)
 {
+    MapFile found[2];
+    if (mapfile_find(base_dir, map_name, found) == 0) {
+        fprintf(stderr, "no map %s in %s/maps\n", map_name, base_dir);
+        memset(ctx, 0, sizeof(*ctx));
+        return false;
+    }
+    return context_load_from(ctx, base_dir, &found[0]);
+}
+
+bool context_load_from(Context *ctx, const char *base_dir, const MapFile *map_file)
+{
     memset(ctx, 0, sizeof(*ctx));
     weapons_default(&ctx->weapons);
 
     ctx->map = calloc(1, sizeof(Map));
-    if (!ctx->map || !map_load_file(ctx->map, base_dir, map_name)) goto fail;
+    if (!ctx->map || !map_load_from(ctx->map, map_file)) goto fail;
 
     ctx->anims = anims_load(base_dir);
     if (!ctx->anims) goto fail;

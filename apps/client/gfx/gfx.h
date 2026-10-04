@@ -92,6 +92,8 @@ void gfx_texture_update(GfxTexture tex, int x, int y, int width, int height, con
 
 // An image file straight to a texture; false when missing. With `key`, colour-keyed.
 bool gfx_texture_load(GfxTexture *tex, const char *path, const Rgba *key);
+// The same from an image file's bytes in memory (a packed map's art).
+bool gfx_texture_load_memory(GfxTexture *tex, const uint8_t *data, size_t size, const Rgba *key);
 
 void gfx_texture_wrap(GfxTexture tex, bool repeat);
 void gfx_texture_filter(GfxTexture tex, bool linear);
