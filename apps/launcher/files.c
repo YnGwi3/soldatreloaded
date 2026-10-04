@@ -107,6 +107,22 @@ bool files_make_parents(const char *path)
     return true;
 }
 
+bool files_remove_empty_parent(const char *path)
+{
+    char dir[1024];
+    snprintf(dir, sizeof dir, "%s", path);
+    char *slash = strrchr(dir, '/');
+    char *back = strrchr(dir, '\\');
+    if (back && (!slash || back > slash)) slash = back;
+    if (!slash || slash == dir) return false;
+    *slash = '\0';
+#ifdef _WIN32
+    return _rmdir(dir) == 0;
+#else
+    return rmdir(dir) == 0;
+#endif
+}
+
 bool files_remove_tree(const char *path)
 {
 #ifdef _WIN32

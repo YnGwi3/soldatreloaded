@@ -6,6 +6,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/stat.h>
 
 #include "archive.h"
 #include "files.h"
@@ -498,6 +499,9 @@ static void update_tests(void)
     CHECK(outcome == UPDATE_UPDATED && !files_exists(UPDATE_TMP) && holds("client.exe", "newer game") &&
               holds("version.txt", "5\n"),
           "started again, the new launcher clears the old away and brings the rest (%d: %s)", outcome, error);
+    struct stat bin;
+    CHECK(!files_exists("bin/server.exe") && stat("bin", &bin) != 0,
+          "and a folder the release no longer has goes with its last file (bin/, once)");
     options.self = NULL;
 
     enter(here);

@@ -7,9 +7,9 @@ as that server does, inside the game, so its script runs there too. It, and ever
 calls the server back through the `server` table. Requests to the web go through `http`,
 with `json` for their bodies.
 
-`scripts/main.lua` is the server owner's: a game's launcher brings a newer one only while it
-is as the game made it, and a server unpacked from its own package makes it on its first
-start, as that package hasn't one. The game's examples are in `scripts/examples/`, kept
+`scripts/main.lua` is the server owner's: a game's updater brings a newer one only while it
+is as the game made it; the server's package ships one too, and a server makes it on its first
+start where it has been taken out. The game's examples are in `scripts/examples/`, kept
 current by every update: a greeter, the players' figures (/stats, /top), a chat filter, admin commands among friends,
 the game run from the chat as gathers run it (`!p`, `!up` with a count of 3, 2, 1, `!r`,
 `!map ash`), and a report of each round to a webhook. Each returns a function that sets it

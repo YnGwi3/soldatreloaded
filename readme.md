@@ -29,8 +29,8 @@ It is playable now, online and against bots, but it is not finished: see
 - **A server browser and a lobby.** Servers that want to be found list themselves with
   [the lobby](https://github.com/soldatreloaded/soldatreloaded-lobby); the browser asks
   each one directly for its players and ping.
-- **A launcher that keeps the game up to date.** Start the game through it and each new
-  release is fetched before you play: only what changed, with your settings left alone.
+- **A game that keeps itself up to date.** Start it and each new release is fetched
+  before you play: only what changed, with your settings left alone.
 - **Scriptable servers.** A Lua 5.4 script on the server hears the game's events (joins,
   kills, chat, rounds), drives it back (say, kick, change map, pause), and can talk to
   the web over HTTP with JSON. See [docs/scripting.md](docs/scripting.md).
@@ -47,12 +47,12 @@ It is playable now, online and against bots, but it is not finished: see
 
 Download the latest release for Windows or Linux from
 [Releases](https://github.com/soldatreloaded/soldatreloaded/releases) and unpack it
-anywhere. Start **Soldat Reloaded.exe** on Windows, or **soldatreloaded-launcher** on
-Linux: it checks for updates, then starts the game.
+anywhere. Start **Soldat Reloaded.exe** on Windows, or **soldatreloaded** on Linux: it
+checks for updates, then plays.
 
 From the main menu, **Servers** lists the games being played, **Join by Address**
 connects to one you know, and **Local Play** hosts a game here, against bots or for
-friends on your network: it starts the dedicated server beside the game, so it plays by
+friends on your network: the game hosts it as the dedicated server would, so it plays by
 the same files in `config/` (the settings, the weapons mod, the rotation it ticks into
 `maplist.txt`) as a server from this install would. **Taunts** sets what a key says: a
 message to everyone or to your team, or your own words as a radio call.
@@ -65,12 +65,11 @@ the scoreboard.
 
 ### The install
 
-The folder you unpacked, as the launcher keeps it:
+The folder you unpacked, as the game keeps it:
 
 | | holds | an update |
 |---|---|---|
-| `Soldat Reloaded.exe` | the launcher (`soldatreloaded-launcher` on Linux) | replaces it first, on its own, then asks you to start again |
-| `bin/` | `client`, the game, and `server`, the dedicated server | replaces them |
+| `Soldat Reloaded.exe` | the game (`soldatreloaded` on Linux, with `soldatreloaded-launcher` beside it, the old launcher's name, which starts it) | replaces it first, on its own, then starts the new one |
 | `data/` | the maps, animations, skeletons and bots the game plays by | keeps it exactly as released |
 | `mods/default/` | the art, sounds and fonts | keeps it exactly as released |
 | `mods/` (beside `default/`) | your mods | never touches them |
@@ -113,8 +112,8 @@ isn't a mod's to change: everyone in a game has to have the same.
 ## Running a server
 
 The release's `-server` package is a headless server: the game, the maps and nothing to
-draw. Unpack it and run `server` (`server.exe` on Windows; in the game's own folder it is
-`bin/server`); its settings are in `config/server.cfg`, which it makes on its first start
+draw. Unpack it and run `server` (`server.exe` on Windows);
+its settings are in `config/server.cfg`, which it makes on its first start
 with every `sv_*` and `bots_*` setting and what it is, the game's default commented out (take a
 line's `//` off to set it otherwise), or given on the command line, which goes over it:
 
@@ -159,7 +158,7 @@ headers, which have to be installed first (the list is in
 [.github/workflows/ci.yml](.github/workflows/ci.yml)).
 
 ```
-xmake              # the client, the server and the launcher
+xmake              # the game and the dedicated server
 xmake run client   # play, in assets/
 xmake run server   # a dedicated server
 xmake test         # the headless tests

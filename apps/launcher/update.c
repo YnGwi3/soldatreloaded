@@ -359,6 +359,7 @@ static void remove_retired(const Manifest *installed, const Manifest *latest)
         if (manifest_find(latest, f->path) || (!manifest_protected(f->path) && !matches(f->path, f, true))) continue;
         remove(f->path);
         files_remove_old(f->path);
+        files_remove_empty_parent(f->path); // a folder the release no longer has (bin/, once)
     }
     for (size_t i = 0; i < sizeof RETIRED / sizeof RETIRED[0]; i++)
         if (!manifest_find(latest, RETIRED[i])) {
@@ -374,7 +375,9 @@ UpdateOutcome update_run(const UpdateOptions *options, const UpdateReport *repor
     read_version(before, sizeof before);
     snprintf(version, version_size, "%s", before);
     error[0] = '\0';
-    remove(UPDATE_TMP); // the launcher this one replaced, if it did
+    // the executable this one replaced, if it did: it started this one and is ending, and
+    // on Windows can't be removed until it has, so it is given a moment
+    for (int i = 0; i < 20 && files_exists(UPDATE_TMP) && remove(UPDATE_TMP) != 0; i++) files_pause(100);
 
     char why[256];
     Manifest installed;
@@ -421,7 +424,7 @@ UpdateOutcome update_run(const UpdateOptions *options, const UpdateReport *repor
     if (self && !matches(self->path, self, true)) {
         snprintf(url, sizeof url, "%s/download/v%s/%s", options->releases, latest.version, latest.full.path);
         bool ok = update_self(&latest, self, url, report, error, error_size);
-        if (ok) snprintf(error, error_size, "The launcher has been updated to version %s. Please start the game again.", latest.version);
+        if (ok) snprintf(error, error_size, "The game has been updated to version %s. Please start it again.", latest.version);
         free(wanted);
         manifest_free(&installed);
         manifest_free(&latest);

@@ -58,7 +58,7 @@
 #define UPDATE_MANIFEST "manifest.txt"
 #define UPDATE_VERSION "version.txt"
 #ifdef _WIN32
-#define UPDATE_TMP "tmp.exe" // the launcher a new one replaced, which the new one deletes
+#define UPDATE_TMP "tmp.exe" // the executable a new one replaced, which the new one deletes
 #else
 #define UPDATE_TMP "tmp"
 #endif

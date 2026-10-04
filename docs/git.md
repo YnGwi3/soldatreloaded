@@ -69,7 +69,7 @@ The wire decides the rest. A Hello carries the layout of the state and a build t
 does not match is refused, so any release that changes the protocol will not talk to
 the one before it. Say so in the tag's message, every time.
 
-A tag is the version; what ships beside it is the client, the server, the launcher and
+A tag is the version; what ships beside it is the game, the server and
 the contents of `assets/` (`data/`, `mods/default/`, `config/` at its defaults and
 `scripts/`), unpacked flat so that the art sits beside the executable: the packages
 `xmake dist` makes (see xmake.lua). The server's package ships `config/` (but
@@ -77,20 +77,23 @@ the contents of `assets/` (`data/`, `mods/default/`, `config/` at its defaults a
 settings, lists, weapons mod and script back as they came. The tag alone is not a
 release until those exist.
 
-Players start the launcher (`Soldat Reloaded.exe`, `soldatreloaded-launcher` on
-Linux), at the top of the install, which keeps their copy at the newest release
-(launcher/update.h) and starts `bin/client.exe`; `bin/server.exe` is the dedicated
-server, and the server package's own sits at its top, the one executable there. Each
+Players start the game (`Soldat Reloaded.exe`, `soldatreloaded` on Linux), at the
+top of the install, whose updater keeps their copy at the newest release as it starts
+(launcher/updater.h, launcher/update.h) and hosts Local Play itself; the server
+package's `server` sits at its top, the one executable there. On Linux the game's
+package keeps `soldatreloaded-launcher`, the launcher's name when it was apart from the
+game, as a script that starts the game: a launcher from then updates itself into it
+first, and players' shortcuts to it still play. Each
 release carries, for each platform, the game (`soldatreloaded-<version>-<platform>.zip`,
 what a player downloads) and a manifest naming every file of an install by its hash; the
-launcher compares the install with it and brings what differs, those files alone, out
+updater compares the install with it and brings what differs, those files alone, out
 of the game's zip where it lies, or the zip whole when most of it changed. So a release
 costs a player what it changed. The manifest lists every file the release ships; the
-launcher treats each by where it lies, weighing the file on disk against the last
+updater treats each by where it lies, weighing the file on disk against the last
 release's manifest and the new one (launcher/update.h):
 
-- **The release's own**, kept as it has it: the top-level files (the launcher,
-  `version.txt`), `bin/`, `data/`, `mods/default/` and `scripts/examples/`. Missing or
+- **The release's own**, kept as it has it: the top-level files (the game,
+  `version.txt`), `data/`, `mods/default/` and `scripts/examples/`. Missing or
   otherwise, it is brought, damage repaired; dropped by a release, deleted.
 - **Everything else a release ships** (`scripts/main.lua`, `config/`'s settings and lists):
   its start of a file that is then the player's. It is made where it never was, brought

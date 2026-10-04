@@ -1,19 +1,19 @@
-// The launcher, what a player starts: Soldat Reloaded.exe on Windows,
-// soldatreloaded-launcher on Linux. It brings the install up to the latest release
-// (update.h), says how that is going in a small window, and starts the game.
+// The game's updater, the first thing it does (updater.h): it brings the install up to
+// the latest release (update.h), says how that is going in a small window, and lets the
+// game go on, or starts the game's new executable when the update brought one.
 //
-//   launcher [--no-update] [--update-only] [--verify] [--releases <url>] [anything for the game...]
+//   game [--no-update] [--update-only] [--verify] [--releases <url>] [anything for the game...]
 //
-//   --no-update       start the game as it is
+//   --no-update       play as it is
 //   --update-only     bring the install up to date and stop there, without the game; the
 //                     exit status says whether it worked
 //   --verify          hash every file, not only those manifest.txt doesn't vouch for
 //   --releases <url>  where the releases are, rather than this repository's on GitHub
 //                     (a local copy of the same layout, to try an update on)
 //
-// Everything else is passed to the game: launcher +map ctf_Ash plays as client +map
-// ctf_Ash does. When the releases can't be reached the game starts as it is; when an
-// update fails the window says why and waits, to play the version installed or quit.
+// Everything else is the game's. When the releases can't be reached the game plays as it
+// is; when an update fails the window says why and waits, to play the version installed or
+// quit. A build run where it was built (no manifest.txt beside it) isn't updated.
 //
 // The work runs on a thread of its own and the window draws what it last said. The
 // window opens only if the work takes longer than a glance, so a start with nothing to
@@ -45,15 +45,14 @@
 #define NOGDI
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
-#define CLIENT_FILE "bin\\client.exe" // xmake.lua's client target, in bin/ beside the launcher
 #else
 #include <unistd.h>
-#define CLIENT_FILE "bin/client"
-// the window's icon, which on Windows is the executable's own (data/icon.ico)
-#define STB_IMAGE_IMPLEMENTATION
-#define STBI_ONLY_PNG
+// the window's icon, which on Windows is the executable's own (data/icon.ico); stb_image
+// is the game's (gfx/gfx.c)
 #include <stb_image.h>
 #endif
+
+#include "updater.h"
 
 #ifndef SOLDATRELOADED_VERSION
 #define SOLDATRELOADED_VERSION "dev"
@@ -348,7 +347,7 @@ static void draw(SDL_Renderer *r, const Shared *s, bool waiting)
         wrapped(r, &S_BODY, MARGIN, y, w, restart ? TEXT : WARN, error);
         // the keys, along the bottom: each named in bold, what it does beside it
         float hy = (float)height - MARGIN - S_SMALL.pixels, hx = MARGIN;
-        if (!restart && files_exists(CLIENT_FILE)) {
+        if (!restart) {
             text(r, &S_SMALL_BOLD, hx, hy, TEXT, "Enter");
             hx += text_width(&S_SMALL_BOLD, "Enter") + 6;
             text(r, &S_SMALL, hx, hy, MUTED, "Play the version installed");
@@ -375,16 +374,20 @@ static void draw(SDL_Renderer *r, const Shared *s, bool waiting)
 
 // --- the game --------------------------------------------------------------------------
 
-// The game, with the arguments the launcher didn't take; it takes over this process
-// (Linux) or is left running as this one ends (Windows). False if it couldn't start.
-static bool start_game(int argc, char **argv)
+// The game started again, its new executable (`self`, in this directory) with the
+// arguments given; it takes over this process (Linux) or is left running as this one
+// ends (Windows). False if it couldn't start.
+static bool start_again(const char *self, int argc, char **argv)
 {
 #ifdef _WIN32
     // One command line, each argument quoted as CommandLineToArgvW reads it back.
     static wchar_t line[32768];
     size_t at = 0;
-    const char *first = "\"" CLIENT_FILE "\"";
-    for (const char *c = first; *c; c++) line[at++] = (wchar_t)*c;
+    wchar_t name[MAX_PATH];
+    if (MultiByteToWideChar(CP_UTF8, 0, self, -1, name, MAX_PATH) <= 0) return false;
+    line[at++] = L'"';
+    for (const wchar_t *c = name; *c; c++) line[at++] = *c;
+    line[at++] = L'"';
     for (int i = 0; i < argc; i++) {
         wchar_t arg[4096];
         int n = MultiByteToWideChar(CP_UTF8, 0, argv[i], -1, arg, (int)(sizeof arg / sizeof arg[0]));
@@ -415,8 +418,10 @@ static bool start_game(int argc, char **argv)
     return true;
 #else
     char **args = calloc((size_t)argc + 2, sizeof *args);
+    char path[MANIFEST_PATH_SIZE + 3];
     if (!args) return false;
-    args[0] = "./" CLIENT_FILE;
+    snprintf(path, sizeof path, "./%s", self);
+    args[0] = path;
     for (int i = 0; i < argc; i++) args[i + 1] = argv[i];
     execv(args[0], args);
     free(args);
@@ -440,30 +445,48 @@ static void set_icon(SDL_Window *window)
 }
 #endif
 
-int main(int argc, char **argv)
+// Whether the directory the game runs from is an install a release made (its manifest.txt):
+// a build run where it was built has none, and isn't updated.
+static bool installed(void) { return files_exists(UPDATE_MANIFEST); }
+
+#ifdef _WIN32
+#include <direct.h>
+#define getcwd _getcwd
+#define chdir _chdir
+#endif
+
+bool updater_run(int *argc, char **argv, int *status)
 {
+    *status = 0;
     Shared s = {.options = {.releases = SOLDATRELOADED_RELEASES, .platform = SOLDATRELOADED_PLATFORM}};
     bool check = true, update_only = false;
-    // the arguments not the launcher's, for the game
-    char **rest = calloc((size_t)argc + 1, sizeof *rest);
-    int rest_count = 0;
-    for (int i = 1; i < argc; i++) {
+    // every argument as given, for the new executable if the update brings one (its own
+    // --releases and --verify too); then the updater's own taken out, the rest the game's
+    int given = *argc - 1;
+    char **all = calloc((size_t)*argc + 1, sizeof *all);
+    for (int i = 1; all && i < *argc; i++) all[i - 1] = argv[i];
+    int kept = 1;
+    for (int i = 1; i < *argc; i++) {
         if (!strcmp(argv[i], "--no-update")) check = false;
         else if (!strcmp(argv[i], "--update-only")) update_only = true;
         else if (!strcmp(argv[i], "--verify")) s.options.thorough = true;
-        else if (!strcmp(argv[i], "--releases") && i + 1 < argc) s.options.releases = argv[++i];
-        else if (rest) rest[rest_count++] = argv[i];
+        else if (!strcmp(argv[i], "--releases") && i + 1 < *argc) s.options.releases = argv[++i];
+        else argv[kept++] = argv[i];
     }
-    // the game's files are beside the launcher, wherever it was started from
-    if (!files_enter_own_directory()) fprintf(stderr, "launcher: its own directory can't be found\n");
+    *argc = kept;
+    argv[kept] = NULL;
+
+    // the game's files are beside it, wherever it was started from; a build run where it
+    // was built is left where it was started, and not updated
+    char started[4096];
+    bool came = getcwd(started, sizeof started) != NULL;
+    if (!files_enter_own_directory() || !installed()) {
+        if (came && chdir(started) != 0) fprintf(stderr, "updater: can't go back to %s\n", started);
+        return !update_only;
+    }
     char self[MANIFEST_PATH_SIZE]; // what it is called there, so it is brought first (update.h)
     if (files_own_name(self, sizeof self)) s.options.self = self;
-
-    if (!check || !s.options.releases[0]) {
-        if (start_game(rest_count, rest)) return 0;
-        SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_ERROR, "Soldat Reloaded", "The game (" CLIENT_FILE ") can't be started.", NULL);
-        return 1;
-    }
+    if (!check || !s.options.releases[0]) return !update_only;
 
 #ifndef _WIN32
     // the window's class, the game's too, so a taskbar or dock groups them, unless the player
@@ -471,43 +494,45 @@ int main(int argc, char **argv)
     setenv("SDL_VIDEO_X11_WMCLASS", "soldatreloaded", 0);
     setenv("SDL_VIDEO_WAYLAND_WMCLASS", "soldatreloaded", 0);
 #endif
-    if (SDL_Init(SDL_INIT_VIDEO) != 0) fprintf(stderr, "launcher: no window: %s\n", SDL_GetError());
-    if (!http_init()) fprintf(stderr, "launcher: curl couldn't start\n");
+    if (SDL_Init(SDL_INIT_VIDEO) != 0) fprintf(stderr, "updater: no window: %s\n", SDL_GetError());
+    if (!http_init()) fprintf(stderr, "updater: curl couldn't start\n");
     s.lock = SDL_CreateMutex();
     snprintf(s.phase, sizeof s.phase, "Starting");
-    char *installed = files_read(UPDATE_VERSION, NULL); // the version until the work says otherwise
-    if (installed) {
-        installed[strcspn(installed, "\r\n")] = '\0';
-        snprintf(s.version, sizeof s.version, "%s", installed);
-        free(installed);
+    char *version = files_read(UPDATE_VERSION, NULL); // the version until the work says otherwise
+    if (version) {
+        version[strcspn(version, "\r\n")] = '\0';
+        snprintf(s.version, sizeof s.version, "%s", version);
+        free(version);
     }
     SDL_Thread *worker = s.lock ? SDL_CreateThread(work, "update", &s) : NULL;
     if (!worker) work(&s); // no thread: the work, then the game, without a window
 
     SDL_Window *window = NULL;
     SDL_Renderer *renderer = NULL;
-    Uint32 started = SDL_GetTicks();
-    bool quit = false, play = false, waiting = false;
-    int status = 0;
-    while (!quit && !play) {
+    Uint32 started_at = SDL_GetTicks();
+    bool quit = false, play = false, again = false, waiting = false;
+    while (!quit && !play && !again) {
         SDL_LockMutex(s.lock);
         Shared now = s;
         SDL_UnlockMutex(s.lock);
-        bool restart = now.outcome == UPDATE_RESTART;
         if (now.finished && update_only) {
-            if (now.error[0]) fprintf(stderr, "launcher: %s\n", now.error);
-            status = now.outcome == UPDATE_FAILED;
+            if (now.error[0]) fprintf(stderr, "updater: %s\n", now.error);
+            *status = now.outcome == UPDATE_FAILED;
             break;
         }
         if (now.finished && !waiting) {
-            if (now.outcome != UPDATE_FAILED && !restart) {
-                if (now.error[0]) fprintf(stderr, "launcher: %s\n", now.error); // couldn't check: play on
+            if (now.outcome == UPDATE_RESTART) { // its own executable is new: that one plays
+                again = true;
+                break;
+            }
+            if (now.outcome != UPDATE_FAILED) {
+                if (now.error[0]) fprintf(stderr, "updater: %s\n", now.error); // couldn't check: play on
                 play = true;
                 break;
             }
-            waiting = true; // the window says what went wrong, or to start again, and waits for an answer
+            waiting = true; // the window says what went wrong and waits for an answer
         }
-        if (!window && (waiting || SDL_GetTicks() - started > WINDOW_DELAY_MS)) {
+        if (!window && (waiting || SDL_GetTicks() - started_at > WINDOW_DELAY_MS)) {
             window = SDL_CreateWindow("Soldat Reloaded", SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED, WINDOW_WIDTH,
                                       WINDOW_HEIGHT, 0);
             if (window) {
@@ -518,9 +543,8 @@ int main(int argc, char **argv)
                 if (!renderer) renderer = SDL_CreateRenderer(window, -1, SDL_RENDERER_SOFTWARE);
                 fonts_load();
             } else if (waiting) {
-                SDL_ShowSimpleMessageBox(restart ? SDL_MESSAGEBOX_INFORMATION : SDL_MESSAGEBOX_ERROR, "Soldat Reloaded",
-                                         now.error, NULL);
-                play = !restart && files_exists(CLIENT_FILE);
+                SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_ERROR, "Soldat Reloaded", now.error, NULL);
+                play = true; // the version installed
                 break;
             }
         }
@@ -530,8 +554,7 @@ int main(int argc, char **argv)
             if (waiting && e.type == SDL_KEYDOWN) {
                 SDL_Keycode key = e.key.keysym.sym;
                 if (key == SDLK_ESCAPE) quit = true;
-                if ((key == SDLK_RETURN || key == SDLK_KP_ENTER || key == SDLK_SPACE) && !restart && files_exists(CLIENT_FILE))
-                    play = true;
+                if (key == SDLK_RETURN || key == SDLK_KP_ENTER || key == SDLK_SPACE) play = true;
             }
         }
         if (renderer) draw(renderer, &now, waiting);
@@ -543,14 +566,16 @@ int main(int argc, char **argv)
     fonts_unload();
     if (renderer) SDL_DestroyRenderer(renderer);
     if (window) SDL_DestroyWindow(window);
-    if (play) {
+    if (play || again) {
         if (worker) SDL_WaitThread(worker, NULL);
         http_cleanup();
-        SDL_Quit();
-        if (start_game(rest_count, rest)) return 0;
-        SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_ERROR, "Soldat Reloaded", "The game (" CLIENT_FILE ") can't be started.", NULL);
-        return 1;
     }
+    if (s.lock) SDL_DestroyMutex(s.lock);
     SDL_Quit();
-    return status;
+    if (again) {
+        if (all && start_again(self, given, all)) return false;
+        SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_INFORMATION, "Soldat Reloaded", s.error, NULL); // start it again, it says
+        return false;
+    }
+    return play;
 }

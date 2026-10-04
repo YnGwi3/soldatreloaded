@@ -59,6 +59,7 @@
 #include "net/discord.h"
 #include "files.h" // the launcher's, for the config's directories
 #include "http.h" // the launcher's HTTPS, for the browser's list
+#include "updater.h" // the game's own updater, as it starts
 #include "render/interface.h"
 #include "render/render.h"
 #include "render/textures.h"
@@ -2456,6 +2457,10 @@ static void net_take(App *app)
 
 int main(int argc, char *argv[])
 {
+    // the install brought up to the latest release first, in a window of its own; a new
+    // executable plays in this one's place (updater.h)
+    int status = 0;
+    if (!updater_run(&argc, argv, &status)) return status;
     App app = {0};
     // its files beside it, from the install: started from bin/ itself, the folder above
     if (!files_enter_install("data")) fprintf(stderr, "no data/ here, beside the executable or above it\n");
