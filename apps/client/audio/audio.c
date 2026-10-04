@@ -220,7 +220,9 @@ static void sound_at(Audio *a, const char *name, Vec2 at, bool distant)
 
 static void sound_play(Audio *a, const char *name, Vec2 at) { sound_at(a, name, at, false); }
 
-void audio_flat(Audio *a, const char *name) { sound_at(a, name, a->camera, false); }
+// at the listener, so at full gain and in the middle: the original's PlaySound(Sample),
+// which has the camera as both listener and source
+void audio_flat(Audio *a, const char *name) { sound_at(a, name, a->listener, false); }
 
 static bool reserved_playing(const Audio *a, const Reserved *r)
 {
@@ -422,12 +424,14 @@ static void audio_event(Audio *a, const Event *e, const World *w, int me)
         default: break;
         }
         break;
-    // The flag's sounds, all from where it happened. The original places the grab and
-    // plays the return, the score and the drop flat, from the camera, so a flag returned
-    // across the map sounds as if it were returned beside you; a departure, on purpose.
+    // The flag's sounds. A score is heard wherever you are, flat, as the original's
+    // (ClientHandleFlagInfo). The grab, the return and the drop are from where they
+    // happened: the original places the grab and plays the return and the drop flat, so
+    // a flag returned across the map sounds as if it were returned beside you; a
+    // departure, on purpose.
     case EVENT_FLAG_GRAB: sound_play(a, "capture.wav", e->flag_grab.pos); break;
     case EVENT_FLAG_RETURN: sound_play(a, "capture.wav", e->flag_return.pos); break;
-    case EVENT_FLAG_SCORE: sound_play(a, "ctf.wav", e->flag_score.pos); break;
+    case EVENT_FLAG_SCORE: audio_flat(a, "ctf.wav"); break;
     case EVENT_FLAG_DROP:
         if (w->soldiers[e->flag_drop.player].team == w->soldiers[me].team) sound_play(a, "infilt-point.wav", e->flag_drop.pos);
         break;
