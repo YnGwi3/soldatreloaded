@@ -150,18 +150,23 @@ static void kill(Feed *f, const Game *g, const char names[MAX_PLAYERS][HUD_NAME]
 static const char *flag_name(ThingStyle flag) { return flag == THING_ALPHA_FLAG ? "Red" : "Blue"; }
 static Rgba flag_color(ThingStyle flag) { return team_color(flag_team(flag)); }
 
-// The match's end: the team that won, or with no teams the player with the most kills.
-static void match_end(Feed *f, Console *con, const Game *g, const char names[MAX_PLAYERS][HUD_NAME], Team winner)
+// The match's end: the team that won, a tie when the teams' scores are level (the
+// original's RenderEndGameTexts), or with no teams the player with the most kills.
+static void match_end(Feed *f, Console *con, const Game *g, const char names[MAX_PLAYERS][HUD_NAME], Team winner,
+                      bool team_game)
 {
     char text[HUD_TEXT];
     Rgba color = team_color(winner);
     if (winner != TEAM_NONE) {
         snprintf(text, sizeof text, "%s Team Wins!", team_name(winner));
+    } else if (team_game) {
+        snprintf(text, sizeof text, "It's a tie");
+        color = (Rgba){245, 245, 245, 255};
     } else {
         int best = -1;
         for (int i = 0; i < MAX_PLAYERS; i++) {
             const Soldier *s = &g->world.soldiers[i];
-            if (s->active && (best < 0 || s->kills > g->world.soldiers[best].kills)) best = i;
+            if (s->active && s->team != TEAM_SPECTATOR && (best < 0 || s->kills > g->world.soldiers[best].kills)) best = i;
         }
         if (best >= 0) snprintf(text, sizeof text, "%s Wins!", names[best]);
         else snprintf(text, sizeof text, "Draw!");
@@ -171,7 +176,6 @@ static void match_end(Feed *f, Console *con, const Game *g, const char names[MAX
 
 void feed_tick(Feed *f, Console *con, const Game *g, const char names[MAX_PLAYERS][HUD_NAME], bool team_game, int me)
 {
-    (void)team_game;
     if (f->shot_ticks > 0) f->shot_ticks--;
     if (f->multi_time > -1) f->multi_time--;
     else f->multi_kills = 0;
@@ -256,7 +260,7 @@ void feed_tick(Feed *f, Console *con, const Game *g, const char names[MAX_PLAYER
             }
             break;
         }
-        case EVENT_MATCH_END: match_end(f, con, g, names, e->match_end.winner); break;
+        case EVENT_MATCH_END: match_end(f, con, g, names, e->match_end.winner, team_game); break;
         default: break;
         }
     }
