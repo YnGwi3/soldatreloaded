@@ -59,6 +59,27 @@ static void medikit(void)
     scene_free(g);
 }
 
+static void grenade_kits(void)
+{
+    Game *g = scene("ctf_Ash", 200, WEAPON_AK74, WEAPON_AK74);
+    settle(g);
+    int kit = find_thing(g, THING_GRENADE_KIT);
+    Vec2 was = g->world.things[kit].pos[0];
+    int other = thing_create(&g->ctx, &g->world, THING_GRENADE_KIT, was, WEAPON_NONE, 0, -1);
+    Soldier *s = &g->world.soldiers[0];
+    s->grenades = 0;
+    place(s, was);
+    run(g, 2, press_nothing);
+    CHECK(s->grenades == g->world.rules.max_grenades, "a grenade kit fills the grenades");
+    int left = 0;
+    for (int i = 0; i < 2; i++) {
+        const Thing *t = &g->world.things[i == 0 ? kit : other];
+        left += t->style == THING_GRENADE_KIT && vec2_length(vec2_sub(t->pos[0], was)) < 10.0f;
+    }
+    CHECK(left == 1, "and of two together the second is left for later (%d left)", left);
+    scene_free(g);
+}
+
 static void capture(void)
 {
     Game *g = scene("ctf_Ash", 200, WEAPON_AK74, WEAPON_AK74);
@@ -154,6 +175,7 @@ void thing_tests(void)
     round_start();
     dropped_gun();
     medikit();
+    grenade_kits();
     capture();
     flag_thrown();
     parachute();

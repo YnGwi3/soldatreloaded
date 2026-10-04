@@ -412,6 +412,10 @@ bool kit_wanted(const World *w, ThingStyle style, const Soldier *s);
 void kit_take(const Context *ctx, World *w, int index, uint8_t soldier, Events *events);
 // What the kit gives, in the soldiers' receipts pass, from the pickup told.
 void kit_give(const Context *ctx, const World *w, Soldier *s, ThingStyle style);
+// The soldier as the receipts pass will leave him, with the kits taken so far this tick
+// given: what the next kit is judged against, so two together aren't both taken by one
+// who the first filled (the original gives at once, in CheckSpriteCollision).
+Soldier kit_receiver(const Context *ctx, const World *w, uint8_t soldier, const Events *events);
 
 // The bonus kits that turn up now and then, on the server's schedule.
 void bonuses_spawn(const Context *ctx, World *w, const MatchSettings *settings, uint32_t tick);

@@ -494,8 +494,11 @@ static void thing_pickup(const Context *ctx, World *w, int index, Events *events
         }
         float dist = vec2_length(vec2_sub(pos, s->pos));
         if (dist >= radius || dist >= closest) continue;
-        if (t->style == THING_MEDICAL_KIT && s->health == DEFAULT_HEALTH) continue;
-        if (t->style == THING_GRENADE_KIT && s->grenades == w->rules.max_grenades && s->grenade_type == WEAPON_FRAG) continue;
+        if (t->style == THING_MEDICAL_KIT || t->style == THING_GRENADE_KIT) { // as this tick's kits leave him
+            Soldier g = kit_receiver(ctx, w, (uint8_t)j, events);
+            if (t->style == THING_MEDICAL_KIT && g.health == DEFAULT_HEALTH) continue;
+            if (t->style == THING_GRENADE_KIT && g.grenades == w->rules.max_grenades && g.grenade_type == WEAPON_FRAG) continue;
+        }
         if (thing_is_flag(t->style) && s->cease_fire_counter > 0) continue;
         closest = dist;
         taker = j;

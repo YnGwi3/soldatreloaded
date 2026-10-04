@@ -72,13 +72,26 @@ void kit_take(const Context *ctx, World *w, int index, uint8_t soldier, Events *
     Thing *t = &w->things[index];
     Soldier *s = &w->soldiers[soldier];
     ThingStyle style = t->style;
-    if (!kit_wanted(w, style, s)) return;
+    Soldier given = kit_receiver(ctx, w, soldier, events);
+    if (!kit_wanted(w, style, &given)) return;
 
     event_emit(events, (Event){.type = EVENT_KIT_PICKUP, .kit_pickup = {.player = soldier, .thing = (uint8_t)index, .kit = style, .pos = t->pos[0]}});
     if (style == THING_MEDICAL_KIT) s->medikit_cooldown = w->rules.medikit_cooldown;
     // the map's kits come up again at another of their spawn points; a bonus goes
     if (style == THING_MEDICAL_KIT || style == THING_GRENADE_KIT) thing_respawn(ctx, w, index);
     else thing_kill(t);
+}
+
+// The pickups in `events` as the things pass runs are all this tick's and none yet
+// received: the buffer is the tick's, and the receipts pass comes after.
+Soldier kit_receiver(const Context *ctx, const World *w, uint8_t soldier, const Events *events)
+{
+    Soldier s = w->soldiers[soldier];
+    for (int i = 0; i < events->count; i++) {
+        const Event *e = &events->items[i];
+        if (e->type == EVENT_KIT_PICKUP && e->kit_pickup.player == soldier) kit_give(ctx, w, &s, e->kit_pickup.kit);
+    }
+    return s;
 }
 
 void kit_give(const Context *ctx, const World *w, Soldier *s, ThingStyle style)
