@@ -37,6 +37,8 @@ It is playable now, online and against bots, but it is not finished: see
 - **More ways to look.** Five gostek types (male, female, waifu, rat, furry), colour
   pickers for every part, grenades in your own colour, and the sky and scenery as you
   like them.
+- **On your Discord profile.** With the Discord app running, it says you're playing
+  Soldat Reloaded, on which map and which server; `cl_discord 0` keeps it to yourself.
 - **Faithful where it counts.** Weapons, movement, bots, votes, the radio menu and the
   HUD are ported from OpenSoldat's code and kept to how it plays, with headless tests
   holding much of it there.

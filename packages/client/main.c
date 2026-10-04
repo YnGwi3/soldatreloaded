@@ -56,6 +56,7 @@
 #include "mod.h"
 #include "net/client_net.h"
 #include "net/demo.h"
+#include "net/discord.h"
 #include "files.h" // the launcher's, for the config's directories
 #include "http.h" // the launcher's HTTPS, for the browser's list
 #include "render/interface.h"
@@ -181,6 +182,10 @@ typedef struct App {
     Input input;
     ClientNet net; // the line to a server, once `connect` opens one
     Browser browser; // the main menu's server list (the `browse` command)
+    Cvar *discord_on;      // cl_discord: what I'm playing, on my Discord profile
+    Discord discord;       // the pipe to the Discord app here (net/discord.h)
+    int discord_kind;      // what it was last shown (discord_update), -1 before the first
+    int64_t discord_since; // and since when
     uint32_t seq; // my commands, numbered
     // cl_rope_debug's memory: each soldier's rope as of the last line, to log changes
     struct {
@@ -1173,6 +1178,8 @@ static bool console_open(App *app, int argc, char *argv[])
     app->player_names = cvar_register(con, "ui_playernames", "1", CVAR_ARCHIVE, "teammates' names at the screen's edge when out of view (everyone's, spectating), and the ping dot");
     app->console_length =
         cvar_register(con, "ui_console_length", "6", CVAR_ARCHIVE, "how many console lines the HUD shows");
+    app->discord_on = cvar_register(con, "cl_discord", "1", CVAR_ARCHIVE,
+                                    "1: Playing Soldat Reloaded on your Discord profile, with the map and the server, while the Discord app runs here");
     app->player_name = cvar_register(con, "cl_player_name", "Major", CVAR_ARCHIVE, "my name");
     app->grenade_color = cvar_register(con, "cl_grenade_color", "", CVAR_ARCHIVE, "the grenades in this colour, RRGGBB, flat and solid; empty for their own art");
     app->cursor_color = cvar_register(con, "cl_cursor_color", "FFFFFF", CVAR_ARCHIVE, "the menu cursor's colour, RRGGBB");
@@ -2211,6 +2218,42 @@ static bool world_reload(App *app, const char *map)
     return true;
 }
 
+// What Discord shows (net/discord.h): the menu, a game hosted here or a server's with its
+// map, or a demo; the time counted from when that began, not from each map.
+static void discord_update(App *app)
+{
+    enum { SHOW_MENU, SHOW_LOCAL, SHOW_ONLINE, SHOW_DEMO } kind = SHOW_MENU;
+    if (!app->mainmenu.shown) {
+        if (app->playing) kind = SHOW_DEMO;
+        else if (client_net_joined(&app->net)) kind = app->local.running ? SHOW_LOCAL : SHOW_ONLINE;
+    }
+    if ((int)kind != app->discord_kind) {
+        app->discord_kind = (int)kind;
+        app->discord_since = (int64_t)time(NULL);
+    }
+    DiscordActivity a = {0};
+    a.since = app->discord_since;
+    switch (kind) {
+    case SHOW_MENU:
+        snprintf(a.details, sizeof a.details, "In the menus");
+        break;
+    case SHOW_LOCAL:
+        snprintf(a.details, sizeof a.details, "On %s", app->net.map);
+        snprintf(a.state, sizeof a.state, "Local Play");
+        break;
+    case SHOW_ONLINE:
+        snprintf(a.details, sizeof a.details, "On %s", app->net.map);
+        snprintf(a.state, sizeof a.state, "%s", app->net.hostname[0] ? app->net.hostname : "Online");
+        break;
+    case SHOW_DEMO:
+        snprintf(a.details, sizeof a.details, "Watching a demo");
+        snprintf(a.state, sizeof a.state, "On %s", app->net.map);
+        break;
+    }
+    discord_set(&app->discord, &a);
+    discord_pump(&app->discord, app->time, app->discord_on->integer != 0);
+}
+
 // What the line's messages began, taken: after each frame's poll, and as a demo plays at
 // each of its frames' ends.
 static void net_take(App *app)
@@ -2261,6 +2304,8 @@ int main(int argc, char *argv[])
     app.net.tap = demo_tap; // what the line brings, into the demo being recorded
     app.net.tap_user = &app;
     browser_init(&app.browser);
+    discord_init(&app.discord);
+    app.discord_kind = -1;
     http_init();
     http_set_agent("soldatreloaded/" SOLDATRELOADED_VERSION);
     if (!console_open(&app, argc, argv)) return 1;
@@ -2327,6 +2372,7 @@ int main(int argc, char *argv[])
         }
         client_net_poll(&app.net, app.console, app.game);
         net_take(&app);
+        discord_update(&app);
         // A demo: begun as `record` asked, or by demo_autorecord once a round; stopped
         // when the line is lost; the frame's packets marked as all in, before its ticks.
         if (!app.playing && client_net_joined(&app.net) && app.net.round && !demo_recording(&app.recorder) &&
@@ -2460,6 +2506,7 @@ int main(int argc, char *argv[])
         host_stop(&app);
     }
     browser_close(&app.browser);
+    discord_close(&app.discord);
     http_cleanup();
     client_net_shutdown(&app.net);
     audio_shutdown(&app.audio);

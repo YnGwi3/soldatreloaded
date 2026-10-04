@@ -2227,6 +2227,7 @@ static void page_options(Ui *ui)
     toggle(ui, "Player names", "ui_playernames");
     toggle(ui, "Minimap", "ui_minimap");
     toggle(ui, "Follow scoped shot", "cl_trackshot");
+    toggle(ui, "Show on Discord", "cl_discord");
     section(ui, "NETWORK");
     slider(ui, "Smoothing", "cl_smooth", 0, 500, 25, true, "%d ms");
 }
