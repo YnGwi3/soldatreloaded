@@ -528,6 +528,21 @@ void stream_tests(void)
     play(&conns, gs, &c, 2, 0, 0);
     CHECK(gs->match.state == MATCH_ENDED, "the clock runs out and the round ends");
     gs->match.counter = 1; // the scores stand a tick rather than five seconds
+    // What is the player's outlives the world made anew: the look, said once in the Hello,
+    // and the loadout, until the client says it again. The next round is begun here, as the
+    // loop would once the scores have stood, so nothing is said between.
+    Soldier before[2] = {gs->world.soldiers[0], gs->world.soldiers[BOT]};
+    before[0].look.shirt = gs->world.soldiers[0].look.shirt = (Rgba){9, 8, 7, 255};
+    before[0].primary_choice = gs->world.soldiers[0].primary_choice = WEAPON_BARRETT;
+    before[0].secondary_choice = gs->world.soldiers[0].secondary_choice = WEAPON_LAW;
+    round_start(gs, &conns, TEST_DATA, "ctf_Ash", MATCH_MODE_COUNT);
+    for (int k = 0; k < 2; k++) {
+        const Soldier *was = &before[k], *now = &gs->world.soldiers[k == 0 ? 0 : BOT];
+        CHECK(memcmp(&now->look, &was->look, sizeof now->look) == 0 && now->primary_choice == was->primary_choice &&
+                  now->secondary_choice == was->secondary_choice && now->gear == was->gear && now->bot == was->bot,
+              "soldier %d keeps its look and loadout into the new round (shirt %u, primary %d, secondary %d)", k == 0 ? 0 : BOT,
+              now->look.shirt.r, now->primary_choice, now->secondary_choice);
+    }
     play(&conns, gs, &c, 30, 0, 0);
     CHECK(conns.round == 2 && strcmp(conns.map, "ctf_Ash") == 0, "the server begins round %u on %s", conns.round, conns.map);
     CHECK(c.round == 2 && strcmp(c.map, "ctf_Ash") == 0, "and the client is told, and makes its world anew (%u on %s)", c.round, c.map);

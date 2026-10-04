@@ -47,7 +47,34 @@ bool round_start(Game *g, Connections *c, const char *data, const char *map, Mat
     }
     weapons_apply(&g->ctx.weapons, weapons);
     settings.mode = match_mode_choose(g->ctx.map, wanted); // the limits stay; the mode is as asked, as the map allows
+    // What is the player's and not the round's outlives the world made anew: the look and
+    // the loadout, said once in the Hello and in the weapons menu since, and whether a bot
+    // plays it. The original keeps them on TPlayer, which a map change leaves alone
+    // (ChangeMap, Game.pas); wiped, everyone was black to the others, and spawned with
+    // an Eagle and a knife.
+    struct {
+        PlayerLook look;
+        Gear gear;
+        WeaponId primary, secondary;
+        bool bot;
+    } kept[MAX_PLAYERS];
+    for (int i = 0; i < MAX_PLAYERS; i++) {
+        const Soldier *s = &g->world.soldiers[i];
+        kept[i].look = s->look;
+        kept[i].gear = s->gear;
+        kept[i].primary = s->primary_choice;
+        kept[i].secondary = s->secondary_choice;
+        kept[i].bot = s->bot;
+    }
     game_init(g, (uint64_t)g->world.tick + 1, settings);
+    for (int i = 0; i < MAX_PLAYERS; i++) {
+        Soldier *s = &g->world.soldiers[i];
+        s->look = kept[i].look;
+        s->gear = kept[i].gear;
+        s->primary_choice = kept[i].primary;
+        s->secondary_choice = kept[i].secondary;
+        s->bot = kept[i].bot;
+    }
     g->world.authority = true;
     g->world.history = history;
     if (history) memset(history, 0, sizeof *history);
