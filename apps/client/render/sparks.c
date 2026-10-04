@@ -8,6 +8,7 @@
 #include <stdio.h>
 
 #include "game/systems/systems.h"
+#include "render/render_state.h" // team_shirt
 #include "render/textures.h"
 
 #define SPARK_GRAVITY (DEFAULT_GRAVITY / 1.4f)
@@ -335,8 +336,9 @@ static void sparks_event(Sparks *s, const Context *ctx, const World *w, const Ev
     case EVENT_EXPLOSION: explosion(s, e->explosion.pos, e->explosion.weapon, e->explosion.radius); break;
     case EVENT_CLUSTER_SPLIT: add(s, e->cluster_split.pos, vec2(0, 0), SPARK_SPLIT_SMOKE, 55); break;
     case EVENT_ROPE_CUT: add(s, e->rope_cut.pos, vec2(0, 0), SPARK_LIL_SMOKE, 25); break; // the rope's snap, wherever it was cut
-    case EVENT_RESPAWN: {
-        Rgba shirt = w->soldiers[e->respawn.target].look.shirt;
+    case EVENT_RESPAWN: { // the shirt as it is worn: the team's in a team game (the original's style 25)
+        const Soldier *who = &w->soldiers[e->respawn.target];
+        Rgba shirt = who->team >= TEAM_ALPHA && who->team <= TEAM_DELTA ? team_shirt(who->team) : who->look.shirt;
         shirt.a = 255;
         spark_add(s, e->respawn.pos, vec2(0, 0), SPARK_SPAWN_SPARK, 33, shirt);
         break;
