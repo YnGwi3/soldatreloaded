@@ -206,6 +206,8 @@ typedef struct App {
     char maps[128][64];       // the maps under data/, for the map window
     int map_count;
     bool was_dead;         // my soldier as of the last tick, for the weapons menu at death
+    bool death_menu_pending;
+    uint32_t death_menu_tick;
     bool was_watching;     // dead or a spectator as of the last tick, for the camera's first target
     int seen_life;         // my latest life, -1 before the first, which opens the weapons menu
     bool team_asked;       // the team menu shown for this round's join
@@ -1662,8 +1664,16 @@ static void tick(App *app)
     bool first_life = me->active && !spectator && app->seen_life < 0;
     if (me->active && !spectator) app->seen_life = me->life;
     if (!playing) { // a demo's recorder picks nothing here
-        if ((first_life || (dead && !app->was_dead)) && !app->limbo_lock && !limbo && !esc) {
+        if (dead && !app->was_dead) {
+            app->death_menu_tick = w->tick;
+            app->death_menu_pending = true;
+        } else if (!dead) {
+            app->death_menu_pending = false;
+        }
+        bool death_menu_ready = app->death_menu_pending && w->tick - app->death_menu_tick >= TICK_RATE;
+        if (((first_life && !dead) || death_menu_ready) && !app->limbo_lock && !limbo && !esc) {
             menus_show(&app->menus, MENU_LIMBO, true, hud_mode(app), 1);
+            app->death_menu_pending = false;
         }
         const Buttons moving = BUTTON_LEFT | BUTTON_RIGHT | BUTTON_JUMP | BUTTON_CROUCH | BUTTON_PRONE | BUTTON_JET | BUTTON_FIRE | BUTTON_THROW;
         if (limbo && !dead && (cmds[app->me].buttons & moving)) menus_show(&app->menus, MENU_LIMBO, false, hud_mode(app), 1);
@@ -2187,6 +2197,8 @@ static bool world_reload(App *app, const char *map)
     app->previous = app->latest = (TickSnapshot){0};
     app->limbo_lock = false;
     app->was_dead = false;
+    app->death_menu_pending = false;
+    app->death_menu_tick = 0;
     app->was_watching = false;
     app->seen_life = -1;
     app->team_asked = false;
