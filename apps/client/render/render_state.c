@@ -33,14 +33,15 @@ static Pose soldier_pose_between(const Context *ctx, const Soldier *from, const 
     return a;
 }
 
-// The team's shirt, worn over the player's own in a team game.
+// The team's shirt, worn over the player's own in a team game: the original's
+// (ApplyShirtColorFromTeam, Net.pas), $D20F05, $151FD9, $D2D205, $05D205.
 Rgba team_shirt(Team team)
 {
     switch (team) {
-    case TEAM_ALPHA: return (Rgba){199, 56, 51, 255};
-    case TEAM_BRAVO: return (Rgba){64, 107, 204, 255};
-    case TEAM_CHARLIE: return (Rgba){230, 199, 64, 255};
-    case TEAM_DELTA: return (Rgba){77, 179, 89, 255};
+    case TEAM_ALPHA: return (Rgba){210, 15, 5, 255};
+    case TEAM_BRAVO: return (Rgba){21, 31, 217, 255};
+    case TEAM_CHARLIE: return (Rgba){210, 210, 5, 255};
+    case TEAM_DELTA: return (Rgba){5, 210, 5, 255};
     default: return (Rgba){140, 140, 148, 255};
     }
 }
