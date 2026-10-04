@@ -294,6 +294,7 @@ bool client_stream_hear(ClientStream *c, Game *g, int me, const uint8_t *data, s
         c->stale++;
         return false;
     }
+    if (netbuf_ok(&b)) c->arrived++;
     if (!netbuf_ok(&b) || m.tick <= c->newest) {
         c->dropped++;
         return false;

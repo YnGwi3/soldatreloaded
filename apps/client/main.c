@@ -257,6 +257,12 @@ typedef struct App {
         uint32_t late, misses, held, skipped, resyncs, applies;
         float correction;
     } net_seen;
+    // the line's quality over the last second, for the FPS and ping line (ui_info): the share of
+    // ticks that had no snapshot, and the round trip's variance
+    struct {
+        uint32_t newest, arrived;
+    } loss_seen;
+    int loss, jitter;
 } App;
 
 static void print_stdout(const char *text, void *user)
@@ -2022,6 +2028,9 @@ static void hud_data_build(App *app)
         p->spectator = s->team == TEAM_SPECTATOR;
     }
     d->ping = me->ping;
+    d->online = client_net_joined(&app->net) && !app->playing;
+    d->loss = app->loss;
+    d->jitter = app->jitter;
     d->bonus = me->bonus == BONUS_PREDATOR ? HUD_BONUS_PREDATOR : me->bonus == BONUS_BERSERKER ? HUD_BONUS_BERSERKER
                : me->bonus == BONUS_FLAME_GOD ? HUD_BONUS_FLAMEGOD : HUD_BONUS_NONE;
     d->bonus_time = me->bonus_time;
@@ -2204,6 +2213,21 @@ static void report_net(App *app)
     app->net_seen.correction = c->correction;
 }
 
+// The line's quality over the last second, for the FPS and ping line: the snapshots lost
+// (the server sends one a tick, so those that didn't come of the ticks the newest moved on
+// by), and the round trip's jitter.
+static void measure_net(App *app)
+{
+    const ClientStream *c = &app->net.stream;
+    bool fresh = app->loss_seen.newest && c->newest >= app->loss_seen.newest && c->arrived >= app->loss_seen.arrived; // not a first second, or a new round's
+    uint32_t ticks = fresh ? c->newest - app->loss_seen.newest : 0, came = fresh ? c->arrived - app->loss_seen.arrived : 0;
+    app->loss_seen.newest = c->newest;
+    app->loss_seen.arrived = c->arrived;
+    bool live = client_net_joined(&app->net) && !app->playing && app->net.link.peer;
+    app->loss = live && ticks > came ? (int)((ticks - came) * 100 / ticks) : 0;
+    app->jitter = live ? (int)app->net.link.peer->roundTripTimeVariance : 0;
+}
+
 // The frame rate, counted over each second: the original's FrameTiming.Fps.
 static void count_frame(App *app, double dt)
 {
@@ -2214,6 +2238,7 @@ static void count_frame(App *app, double dt)
     app->frames = 0;
     app->frame_timer = 0;
     report_net(app);
+    measure_net(app);
 }
 
 // The fonts, the minimap and the menus, sized to the window; again whenever it changes.

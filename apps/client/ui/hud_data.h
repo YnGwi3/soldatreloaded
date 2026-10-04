@@ -123,6 +123,8 @@ typedef struct HudData {
     HudPlayer players[MAX_PLAYERS];
     int me;
     int ping;
+    bool online;     // on a server's line: the FPS line says how the line is too
+    int loss, jitter; // snapshots lost over the last second, percent; the round trip's jitter, ms
     int respawn_counter; // ticks until I respawn
     int cease_fire_counter;
 

@@ -1586,6 +1586,11 @@ void interface_draw(const Interface *hud, const HudData *d, const GameMenus *men
         text_draw(str, 460 * f.iscale_x, 10);
         snprintf(str, sizeof(str), "Ping: %d", d->ping);
         text_draw(str, 550 * f.iscale_x, 10);
+        if (d->online) { // under it, how the line has been over the last second
+            text_color(d->loss >= 5 ? (Rgba){255, 90, 70, 255} : (Rgba){239, 170, 200, 255});
+            snprintf(str, sizeof(str), "Loss: %d%%  Jitter: %d", d->loss, d->jitter);
+            text_draw(str, minf(550 * f.iscale_x, f.game_width - text_width(str) - 4), 26);
+        }
     }
     if (d->recording) {
         text_color((Rgba){195, 0, 0, (uint8_t)fabsf(sinf(5.1f * (float)d->time / 2) * 255)});

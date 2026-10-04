@@ -183,6 +183,7 @@ typedef struct ClientStream {
     uint16_t round;      // the round I am in (MsgMap); snapshots of another are dropped
     uint32_t dropped;    // snapshots that couldn't be read
     uint32_t stale;      // snapshots of another round
+    uint32_t arrived;    // snapshots of this round that came, in order or not: against the ticks they cover, the loss
     uint32_t held_back;  // times a soldier I know was held back from a snapshot (SNAP_SAME)
     size_t largest;      // the largest snapshot heard, in bytes
 } ClientStream;
