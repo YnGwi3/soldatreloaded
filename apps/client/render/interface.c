@@ -502,6 +502,13 @@ static void draw_ping_dot(const Interface *hud, const Frame *f, const HudData *d
     draw_sprite_scaled(&hud->dot, x, y, sx, sy, with_alpha(c, ping > 255 ? 255 : ping));
 }
 
+// Where the kill console's lines begin, by ui_killconsole_pos: at the top on the right
+// (the original's), lower on the right, or on the left under the chat, where the icon
+// comes first and the lines run from the left edge.
+#define KILLCONSOLE_LEFT_TEXT 45 // a line's start on the left, past the icon
+static float kill_console_top(const HudData *d) { return d->kill_position == 1 ? 210.0f : d->kill_position == 2 ? 110.0f : 60.0f; }
+static bool kill_console_left(const HudData *d) { return d->kill_position == 2; }
+
 // The kill console's weapon icons, beside the lines drawn later with the texts.
 static void draw_kill_console_icons(const Interface *hud, const Frame *f, const HudData *d, Rect viewport)
 {
@@ -515,8 +522,8 @@ static void draw_kill_console_icons(const Interface *hud, const Frame *f, const 
         const HudKillLine *k = &d->kills[j];
         if (!k->text[0] || !k->has_icon) continue;
         l2 += KILLCONSOLE_SEPARATE_HEIGHT;
-        float x = 605 * f->iscale_x;
-        float y = (float)j * (FONT_WEAPONMENUSIZE + 2) + 59 + l2;
+        float x = kill_console_left(d) ? 5 : 605 * f->iscale_x;
+        float y = (float)j * (FONT_WEAPONMENUSIZE + 2) + kill_console_top(d) - 1 + l2;
         draw_sprite_scaled(&hud->guns[k->weapon], x, y, 0.8f, 0.8f, (Rgba){255, 255, 255, (uint8_t)alpha});
     }
 }
@@ -882,7 +889,7 @@ static void draw_console(const Frame *f, const HudData *d, bool dim)
     }
 }
 
-// The kill console's lines, right-aligned, smaller when long.
+// The kill console's lines, right-aligned (or from the left, ui_killconsole_pos), smaller when long.
 static void draw_kill_console(const Frame *f, const HudData *d, Rect viewport)
 {
     int alpha = 245;
@@ -901,8 +908,8 @@ static void draw_kill_console(const Frame *f, const HudData *d, Rect viewport)
             tiny = !tiny;
             text_style(tiny ? FONT_SMALLEST : FONT_WEAPONS_MENU);
         }
-        float x = 595 * f->iscale_x - text_width(k->text);
-        float y = 60 + (float)i * (FONT_WEAPONMENUSIZE + 2) + dy;
+        float x = kill_console_left(d) ? KILLCONSOLE_LEFT_TEXT : 595 * f->iscale_x - text_width(k->text);
+        float y = kill_console_top(d) + (float)i * (FONT_WEAPONMENUSIZE + 2) + dy;
         text_color(with_alpha(k->color, alpha));
         text_draw(k->text, x, y);
     }

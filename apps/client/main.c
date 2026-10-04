@@ -133,6 +133,7 @@ typedef struct App {
     Cvar *forcebg, *forcebg_color1, *forcebg_color2; // the sky in colours of my own instead of the map's (r_forcebg)
     Cvar *minimap, *info, *player_names, *console_length;
     Cvar *team_names, *typing_style; // ui_teamnames, ui_typing
+    Cvar *kill_length, *kill_position; // ui_killconsole_length, ui_killconsole_pos
     Cvar *player_name;
     Cvar *grenade_color;
     Cvar *cursor_color, *crosshair_color, *cursor_size, *crosshair_size;
@@ -1198,6 +1199,10 @@ static bool console_open(App *app, int argc, char *argv[])
                                     "1: teammates' names by them always, not only at the screen's edge when out of view (with ui_playernames)");
     app->typing_style = cvar_register(con, "ui_typing", "1", CVAR_ARCHIVE,
                                       "over a player typing: 0 nothing, 1 the original's dots, 2 \"Typing...\"");
+    app->kill_length = cvar_register(con, "ui_killconsole_length", "15", CVAR_ARCHIVE,
+                                     "the kill console's lines, two a kill, 0 to 50; 0 shows none");
+    app->kill_position = cvar_register(con, "ui_killconsole_pos", "0", CVAR_ARCHIVE,
+                                       "where the kill console is: 0 top right (the original's), 1 lower on the right, 2 top left, under the chat");
     app->console_length =
         cvar_register(con, "ui_console_length", "6", CVAR_ARCHIVE, "how many console lines the HUD shows");
     app->discord_on = cvar_register(con, "cl_discord", "1", CVAR_ARCHIVE,
@@ -1684,6 +1689,7 @@ static void tick(App *app)
     snapshot_tick(app);
     char names[MAX_PLAYERS][HUD_NAME];
     for (int i = 0; i < MAX_PLAYERS; i++) player_name(app, i, names[i], sizeof names[i]);
+    app->feed.kill_length = clampi(app->kill_length->integer, 0, HUD_KILL_LINES);
     feed_tick(&app->feed, app->console, app->game, names, team_game(app), app->me);
     consoles_tick(&app->consoles);
 
@@ -2064,6 +2070,7 @@ static void hud_data_build(App *app)
     d->player_names = app->player_names->integer != 0;
     d->team_names = app->team_names->integer != 0;
     d->typing_style = clampi(app->typing_style->integer, 0, 2);
+    d->kill_position = clampi(app->kill_position->integer, 0, 2);
 
     // the radio menu's columns: the calls, and the places of the call chosen
     int call = d->radio_state ? d->radio_state - 1 : 0;

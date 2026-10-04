@@ -12,7 +12,7 @@
 #define HUD_TEXT 160
 #define HUD_NAME 32
 #define HUD_CONSOLE_LINES 64   // room for the big console: what fits 85% of the view
-#define HUD_KILL_LINES 15      // ui_killconsole_length
+#define HUD_KILL_LINES 50      // ui_killconsole_length, at most (the original's range)
 #define HUD_BIG_MESSAGES 4
 #define HUD_TEAMS 5            // none, alpha, bravo, charlie, delta
 
@@ -131,6 +131,7 @@ typedef struct HudData {
     int console_count;
     HudKillLine kills[HUD_KILL_LINES];
     int kill_count;
+    int kill_position; // ui_killconsole_pos: 0 top right (the original's), 1 lower on the right, 2 top left
     HudBigMessage big[HUD_BIG_MESSAGES];
     int big_count;
     char cursor_text[HUD_NAME]; // the player under the cursor

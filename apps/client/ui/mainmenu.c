@@ -2231,6 +2231,12 @@ static void page_options(Ui *ui)
         static const char *const STYLE_NAMES[] = {"Off", "Dots", "Typing..."};
         cvar_select(ui, "Typing indicator", "ui_typing", STYLES, STYLE_NAMES, NULL, 3);
     }
+    slider(ui, "Kill log length", "ui_killconsole_length", 0, 50, 2, true, "%d lines");
+    {
+        static const int PLACES[] = {0, 1, 2};
+        static const char *const PLACE_NAMES[] = {"Top right", "Lower right", "Top left"};
+        cvar_select(ui, "Kill log position", "ui_killconsole_pos", PLACES, PLACE_NAMES, NULL, 3);
+    }
     toggle(ui, "Minimap", "ui_minimap");
     toggle(ui, "Follow scoped shot", "cl_trackshot");
     toggle(ui, "Show on Discord", "cl_discord");

@@ -46,7 +46,9 @@ static void kill_scroll(Feed *f)
 // A line at the bottom of the kill console (ConsoleNum); the oldest goes when it is full.
 static void kill_line(Feed *f, const char *text, Rgba color, WeaponId weapon, bool icon)
 {
-    if (f->kill_count == HUD_KILL_LINES) kill_scroll(f);
+    int length = f->kill_length < HUD_KILL_LINES ? f->kill_length : HUD_KILL_LINES;
+    while (f->kill_count > 0 && f->kill_count >= length) kill_scroll(f);
+    if (length <= 0) return; // no kill console (ui_killconsole_length 0)
     HudKillLine *l = &f->kills[f->kill_count++];
     snprintf(l->text, sizeof l->text, "%s", text);
     l->color = color;
@@ -181,6 +183,7 @@ void feed_tick(Feed *f, Console *con, const Game *g, const char names[MAX_PLAYER
     if (f->shot_ticks > 0) f->shot_ticks--;
     if (f->multi_time > -1) f->multi_time--;
     else f->multi_kills = 0;
+    while (f->kill_count > f->kill_length && f->kill_count > 0) kill_scroll(f); // made shorter since
     // the kill console scrolls once, a while after the last kill (UpdateFrame.pas)
     if (++f->scroll_tick == FEED_SCROLL_TICKS) {
         kill_scroll(f);

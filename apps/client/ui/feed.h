@@ -22,6 +22,7 @@
 typedef struct Feed {
     HudKillLine kills[HUD_KILL_LINES]; // newest last
     int kill_count;
+    int kill_length; // the lines kept, ui_killconsole_length (0 to HUD_KILL_LINES); set before each tick
     int scroll_tick;
     HudBigMessage big[HUD_BIG_MESSAGES]; // by layer: 0 the flags', 1 the match's
     HudWeaponStat stats[WEAPON_COUNT];   // my shots, hits, kills and headshots by weapon (F2)
