@@ -1,8 +1,8 @@
 # Scripting
 
 The server runs a Lua script (Lua 5.4), named by `sv_script`: `scripts/main.lua` by
-default, read once as the server starts, if the file is there. The game's Local Play is
-that server, started beside the game, so its script runs there too. It, and every script it
+default, read once as the server starts, if the file is there. The game's Local Play hosts
+as that server does, inside the game, so its script runs there too. It, and every script it
 `require`s, hands the server functions to call when things happen (`server.on`), and
 calls the server back through the `server` table. Requests to the web go through `http`,
 with `json` for their bodies.

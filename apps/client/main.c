@@ -68,7 +68,7 @@
 #include <time.h>
 
 #include "audio/audio.h"
-#include "net/local_server.h"
+#include "hosted.h" // the server's, for Local Play
 #include "host_cvars.h"
 #include "ui/consoles.h"
 #include "ui/feed.h"
@@ -158,8 +158,7 @@ typedef struct App {
     // the map, and Local Play's: the server's own cvars, which the main menu edits and
     // config/server.cfg keeps, so a dedicated server beside this one plays the same game
     HostCvars hosting;
-    LocalServer local; // the game hosted here (the `host` command): bin/server, started beside it
-    bool local_joined;  // and joined, once it said it was hosting
+    Hosted *hosted; // Local Play: the game hosted here (the `host` command), as a dedicated server hosts it (hosted.h); on the heap
 
     // Demos (net/demo.h): the game joined recorded, or a demo played in its place.
     Cvar *demo_autorecord; // a demo of every round joined
@@ -1075,11 +1074,11 @@ static void cmd_connect(Console *con, int argc, char **argv, void *user)
     client_net_connect(&app->net, con, address, port, app->player_name->value, app->password->value);
 }
 
-// The game hosted here is over: the server told to quit, the port freed.
+// The game hosted here is over: its players told, the port freed.
 static void host_stop(App *app)
 {
-    if (!app->local.running) return;
-    local_server_stop(&app->local);
+    if (!app->hosted->running) return;
+    hosted_close(app->hosted);
     console_print(app->console, "no longer hosting\n");
 }
 
@@ -1102,70 +1101,36 @@ static void cmd_browse(Console *con, int argc, char **argv, void *user)
     browser_refresh(&app->browser, app->lobby->value, app->time);
 }
 
-// host: Local Play, the dedicated server started beside the game (net/local_server.h) on
-// this install's files, saved first as the menu left them; joined over the loopback once
-// it says it is hosting (local_pump). With no rotation, `map` begins.
+// host: Local Play, the game hosted here as a dedicated server from this install would
+// host it (hosted.h): by the hosting cvars, saved first as the menu left them, and the
+// files of config/; joined over the loopback at once. With no rotation, `map` begins.
 static void cmd_host(Console *con, int argc, char **argv, void *user)
 {
     (void)argc, (void)argv;
     App *app = user;
-    if (app->local.running) {
+    if (app->hosted->running) {
         console_print(con, "already hosting on port %d\n", app->hosting.port->integer);
         return;
     }
     demo_stop_playback(app);
     if (client_net_joined(&app->net)) client_net_disconnect(&app->net, con);
     if (!config_save(con)) console_print_color(con, HUD_COLOR_WARNING, "could not write the settings in config/\n");
-
-    // what isn't in its files: the data, a rotation for this run, the map with none
-    const char *args[8];
-    int n = 0;
-    args[n++] = "+data", args[n++] = app->data->value;
-    char rotation[CONSOLE_VALUE_SIZE];
-    maplist_read(rotation, sizeof rotation);
-    if (app->hosting.maps->value[0]) args[n++] = "+sv_maps", args[n++] = app->hosting.maps->value;
-    else if (!rotation[0]) args[n++] = "+map", args[n++] = app->hosting.map->value;
-    args[n] = NULL;
-    char error[256];
-    if (!local_server_start(&app->local, args, error, sizeof error)) {
-        console_print_color(con, HUD_COLOR_WARNING, "could not host: %s\n", error);
+    maplist_make();
+    hosted_load_weapons(app->hosted);
+    if (!hosted_open(app->hosted)) {
+        console_print_color(con, HUD_COLOR_WARNING, "could not host on port %d\n", app->hosting.port->integer);
         return;
     }
-    app->local_joined = false;
+    client_net_connect(&app->net, con, "127.0.0.1", app->hosted->host.settings.port, app->player_name->value, app->hosting.password->value);
 }
 
-// The game hosted here: its console's lines into ours, and, once it says it is hosting,
-// joined. One that has stopped (a map it can't load, the port taken) is let go.
-static void local_pump(App *app)
+// The game hosted here, a frame of it, before the line is polled; one that has stopped
+// (a map it can't go on to) is let go.
+static void local_pump(App *app, double dt)
 {
-    char line[LOCAL_SERVER_LINE];
-    while (local_server_line(&app->local, line, sizeof line)) {
-        console_print(app->console, "server: %s\n", line);
-        if (!app->local_joined && !strncmp(line, "hosting ", 8)) {
-            app->local_joined = true;
-            client_net_connect(&app->net, app->console, "127.0.0.1", (uint16_t)app->hosting.port->integer,
-                               app->player_name->value, app->hosting.password->value);
-        }
-    }
-    if (!local_server_alive(&app->local)) {
-        console_print_color(app->console, HUD_COLOR_WARNING, "the hosted game stopped\n");
-        console_execute(app->console, "disconnect");
-    }
-}
-
-// addbot [name] / addbot1 [name] / addbot2 [name]: a bot into the game hosted here, on
-// the emptier side, on alpha, or on bravo: said to its console (the original's server
-// commands).
-static void cmd_addbot(Console *con, int argc, char **argv, void *user)
-{
-    App *app = user;
-    if (!app->local.running) {
-        console_print(con, "not hosting: bots join a game hosted here (Local Play, or `host`)\n");
-        return;
-    }
-    char text[CONSOLE_TEXT_SIZE];
-    snprintf(text, sizeof text, argc > 1 ? "%s \"%s\"" : "%s", argv[0], argc > 1 ? argv[1] : "");
-    local_server_send(&app->local, text);
+    if (hosted_pump(app->hosted, dt, app->time)) return;
+    console_print_color(app->console, HUD_COLOR_WARNING, "the hosted game stopped\n");
+    console_execute(app->console, "disconnect");
 }
 
 // +radio: the radio menu opened, or shut, as the original's TAction.Radio has it
@@ -1298,6 +1263,7 @@ static bool console_open(App *app, int argc, char *argv[])
     app->mod_name = cvar_register(con, "cl_mod", "", CVAR_ARCHIVE,
                                   "the mod in mods/ the game looks and sounds like, over mods/default/; empty for none. From the next start");
     host_cvars_register(con, &app->hosting); // the map, and Local Play's: a dedicated server's too (host_cvars.h)
+    hosted_init(app->hosted, con, &app->hosting, app->data); // Local Play's commands: addbot, nextmap, kick... (hosted.h)
     app->width = cvar_register(con, "r_screenwidth", "1600", CVAR_ARCHIVE, "the window's width");
     app->height = cvar_register(con, "r_screenheight", "900", CVAR_ARCHIVE, "the window's height");
     app->swapeffect = cvar_register(con, "r_swapeffect", "0", CVAR_ARCHIVE, "wait for the display's refresh (vsync)");
@@ -1421,9 +1387,6 @@ static bool console_open(App *app, int argc, char *argv[])
     console_add_command(con, "disconnect", cmd_disconnect, app, "leave the server, and stop hosting one here");
     console_add_command(con, "host", cmd_host, app, "host a game here on the sv_* and bots_* cvars, and join it");
     console_add_command(con, "browse", cmd_browse, app, "ask the lobby (cl_lobby) for its servers, and each server what it is playing");
-    console_add_command(con, "addbot", cmd_addbot, app, "a bot into the game hosted here: addbot [name]");
-    console_add_command(con, "addbot1", cmd_addbot, app, "a bot into alpha of the game hosted here: addbot1 [name]");
-    console_add_command(con, "addbot2", cmd_addbot, app, "a bot into bravo of the game hosted here: addbot2 [name]");
     input_init(&app->input, con);
 
     // the code's binds are the game's own; the player's files run over them
@@ -2422,7 +2385,7 @@ static void discord_update(App *app)
     enum { SHOW_MENU, SHOW_LOCAL, SHOW_ONLINE, SHOW_DEMO } kind = SHOW_MENU;
     if (!app->mainmenu.shown) {
         if (app->playing) kind = SHOW_DEMO;
-        else if (client_net_joined(&app->net)) kind = app->local.running ? SHOW_LOCAL : SHOW_ONLINE;
+        else if (client_net_joined(&app->net)) kind = app->hosted->running ? SHOW_LOCAL : SHOW_ONLINE;
     }
     if ((int)kind != app->discord_kind) {
         app->discord_kind = (int)kind;
@@ -2505,7 +2468,8 @@ int main(int argc, char *argv[])
     app.discord_kind = -1;
     http_init();
     http_set_agent("soldatreloaded/" SOLDATRELOADED_VERSION);
-    if (!console_open(&app, argc, argv)) return 1;
+    app.hosted = calloc(1, sizeof *app.hosted); // Local Play's, large
+    if (!app.hosted || !console_open(&app, argc, argv)) return 1;
     snprintf(app.net.data_dir, sizeof app.net.data_dir, "%s", app.data->value); // where a server's map is found, or fetched into
     mod_init(&app.mod, MOD_ROOT, app.mod_name->value); // what it looks and sounds like, as the config says
     consoles_init(&app.consoles, app.console_length->integer);
@@ -2562,7 +2526,7 @@ int main(int argc, char *argv[])
         app.time += dt;
 
         poll_events(&app);
-        if (app.local.running) local_pump(&app); // the game hosted here: its lines, and joining it
+        if (app.hosted->running) local_pump(&app, dt); // the game hosted here, before the line is polled
         browser_pump(&app.browser, app.time); // the server list, while the menu asks for it
         if (app.play_name[0]) { // its first frames, up to its first tick, at once: its world made
             demo_start_playback(&app);
@@ -2686,7 +2650,7 @@ int main(int argc, char *argv[])
                 app.demos_shown = demos;
                 mainmenu_draw(&app.mainmenu, app.console, &app.hud, &app.render.gostek, &app.game->ctx,
                               app.input.cursor, GAME_HEIGHT * r.width / r.height, GAME_HEIGHT / r.height, app.time,
-                              console_log_line(app.console, 0), client_net_joined(&app.net), app.local.running, app.maps, app.map_count, &app.browser,
+                              console_log_line(app.console, 0), client_net_joined(&app.net), app.hosted->running, app.maps, app.map_count, &app.browser,
                               app.demos, app.demo_count);
                 char command[256];
                 if (mainmenu_take_command(&app.mainmenu, command, sizeof command)) console_execute(app.console, command);
@@ -2707,7 +2671,7 @@ int main(int argc, char *argv[])
 
     demo_stop_recording(&app);
     demo_play_close(&app.player);
-    if (app.local.running) {
+    if (app.hosted->running) {
         client_net_disconnect(&app.net, app.console);
         host_stop(&app);
     }

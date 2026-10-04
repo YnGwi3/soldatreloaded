@@ -344,14 +344,15 @@ everyone's command from `stream_command`, the bots' from their minds
 snapshot to every player); a round change if one is due; flush.
 
 **A host** (server/host.c) is the world with authority, the line, the players, the bots
-and the rounds in one struct, pumped by whoever owns it. The dedicated server
-(server/main.c) is a console and a stdin reader around one. The client's Local Play is
-that server: the `host` command starts bin/server beside the game (client/net/
-local_server.c) on the install's own files, its console piped into the game's, and joins
-it over the loopback once it says it is hosting, as it would any server. So a game
-against bots is the netcode's ordinary case with no latency, friends can join the same
-game at the player's address, and Local Play hosts exactly as a dedicated server from
-that install would: its server.cfg, weapons.ini, maplist.txt, lists and script.
+and the rounds in one struct, pumped by whoever owns it. A game hosted (server/hosted.c)
+is a host with what a server runs beside it: the script, the lobby's heartbeat, the
+weapons mod, by the hosting cvars and the files of config/. The dedicated server
+(server/main.c) is a console and a stdin reader around one; the client's Local Play holds
+another (the `host` command), pumped each frame before the client polls its own line,
+which it then joins over the loopback as it would any server. So a game against bots is
+the netcode's ordinary case with no latency, friends can join the same game at the
+player's address, and Local Play hosts exactly as a dedicated server from that install
+would: its server.cfg, weapons.ini, maplist.txt, lists and script.
 
 **The bots** (server/bots.c) are the original's AI (opensoldat's AI.pas), ported as it
 stands, and they sit where a client sits: a source of commands. Each tick a bot reads

@@ -100,12 +100,13 @@ target("client")
     set_kind("binary")
     add_rules("icon")
     add_deps("shared")
-    -- the hosting settings, which Local Play sets for the server it starts (net/local_server.c)
-    add_files("apps/client/**.c", "apps/server/host_cvars.c")
+    -- the server but its console and loop (server/hosted.h), for Local Play: a game hosted
+    -- here as a dedicated server hosts it, its script with it
+    add_files("apps/client/**.c", "apps/server/*.c|main.c|stdin_reader.c")
     -- the launcher's HTTPS, for the server browser's list from the lobby (client/net/browser.c)
     add_files("apps/launcher/http.c", "apps/launcher/files.c", "apps/launcher/sha256.c")
     add_includedirs("apps/client", "apps/server", "apps/launcher")
-    add_packages("libsdl2", "stb", "libcurl")
+    add_packages("libsdl2", "stb", "libcurl", "lua")
     if is_plat("windows") then
         add_syslinks("advapi32") -- the machine's ID, for its hardware ID (client/net/hwid.c)
     else
