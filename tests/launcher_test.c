@@ -581,8 +581,9 @@ static void release_tests(void)
     CHECK(files_exists(SCRATCH "/release/manifest.txt"), "and carries its manifest.txt");
 #ifndef _WIN32
     struct stat st;
-    CHECK(stat(SCRATCH "/release/bin/client", &st) == 0 && (st.st_mode & 0100) &&
-              stat(SCRATCH "/release/bin/server", &st) == 0 && (st.st_mode & 0100),
+    // the game, and the old launcher's name, which starts it
+    CHECK(stat(SCRATCH "/release/soldatreloaded", &st) == 0 && (st.st_mode & 0100) &&
+              stat(SCRATCH "/release/soldatreloaded-launcher", &st) == 0 && (st.st_mode & 0100),
           "its executables are executable");
 #endif
     files_remove_tree(SCRATCH "/release");
