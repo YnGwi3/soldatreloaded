@@ -123,10 +123,11 @@ server +sv_hostname "My server" +sv_maps "ctf_Ash ctf_Kampf" +sv_password secret
 ```
 
 Beside it in `config/`, made on the first start, are its weapons mod and the lists it
-reads, the bans and mutes among them, which it writes too. The server package ships no
-`config/`, so unpacking a new release over a server never touches them; a server starts
-with the game's own weapons, and a `weapons.ini` that lists them all, commented out. (The
-game's package ships its `config/` with GatherWM as the weapons mod, for Local Play.)
+reads, the bans and mutes among them, which it writes too. Both packages ship `config/` at
+its defaults, GatherWM as the weapons mod among them, and `scripts/main.lua`, so a server
+unpacked fresh has everything to see and change. Unpacking a new release over a server puts
+them back as they came: keep a copy of what you change. Without a `weapons.ini` a server
+plays the game's own weapons, and writes one that lists them all, commented out.
 
 | file | holds |
 |---|---|

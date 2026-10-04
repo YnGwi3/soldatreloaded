@@ -72,9 +72,10 @@ the one before it. Say so in the tag's message, every time.
 A tag is the version; what ships beside it is the client, the server, the launcher and
 the contents of `assets/` (`data/`, `mods/default/`, `config/` at its defaults and
 `scripts/`), unpacked flat so that the art sits beside the executable: the packages
-`xmake dist` makes (see xmake.lua). The server's package leaves `config/` out, so
-unpacking a release over a server never touches its settings, lists or weapons mod; it
-makes them on its first start. The tag alone is not a release until those exist.
+`xmake dist` makes (see xmake.lua). The server's package ships `config/` (but
+`client.cfg`) and `scripts/main.lua` too, so unpacking a release over a server puts its
+settings, lists, weapons mod and script back as they came. The tag alone is not a
+release until those exist.
 
 Players start the launcher (`Soldat Reloaded.exe`, `soldatreloaded-launcher` on
 Linux), at the top of the install, which keeps their copy at the newest release

@@ -210,14 +210,15 @@ target("tests")
 -- each file in it lies, so the launcher brings an update's files alone out of it, by range
 -- (launcher/update.h); on Linux it keeps the executables' bit, as Info-ZIP writes it. What
 -- an install holds is assets/'s data/, mods/default/ and scripts/, flat, which is how
--- the game expects to find them (docs/git.md, Releases); the game's package its config/ too.
+-- the game expects to find them (docs/git.md, Releases); and config/.
 --
 --   soldatreloaded          the game, a player's: everything, the server among it so anyone
 --                           can host; the launcher, what a player starts, at the top, and
 --                           the client and the server in bin/; and manifest.txt, what it
 --                           all is, which an update is brought out of
 --   soldatreloaded-server   a headless server's: the server at the top, its one executable;
---                           data/ and no mods/, no art and no sound
+--                           data/, config/ and scripts/, and no mods/, no art and no sound
+--                           but what data/textures/ and scenery-gfx/ hold of custom maps
 --
 -- `xmake dist` packs them into build/release/, beside the manifest the launcher reads:
 -- the game's, with the package named in it. The formats are launcher/manifest.h's.
@@ -229,9 +230,7 @@ local function release_package(name, suffix, bindir)
         set_bindir(bindir)
         add_installfiles("license.md")
         -- the server's scripts: the examples, the release's (main.lua, which runs them, is the
-        -- owner's: in the game's package, which the launcher leaves be once changed, and in
-        -- the server's none, as unpacking a release over a server would put it back as it
-        -- came; the server makes it there)
+        -- owner's, each package's own below)
         add_installfiles("assets/(scripts/examples/**)")
 end
 
@@ -305,8 +304,7 @@ release_package("soldatreloaded", "", "bin")
     end
     add_installfiles("assets/(mods/default/**)") -- the game's; a player's mods beside it are theirs
     -- the settings, at their defaults: the player's once changed, which the launcher then leaves
-    -- be (launcher/update.h). Not in the server's package, unpacked over a server by hand: it
-    -- makes its own there
+    -- be (launcher/update.h)
     add_installfiles("assets/(config/*)")
     add_installfiles("assets/(scripts/main.lua)") -- the owner's once they change it (launcher/update.h)
     finish_install(true)
@@ -314,6 +312,10 @@ release_package("soldatreloaded", "", "bin")
 release_package("soldatreloaded-server", "-server", ".")
     add_targets("server")
     add_installfiles("assets/(data/**)|icon.ico|icon.png")
+    -- the server's settings and its script, at their defaults, to be seen and changed from
+    -- the start; unpacking a later release over a server puts them back as they came
+    add_installfiles("assets/(config/*)|client.cfg")
+    add_installfiles("assets/(scripts/main.lua)")
     finish_install(false)
 
 -- xmake dist: the two packages, in build/release/, and latest-<plat>-<arch>.txt, the
