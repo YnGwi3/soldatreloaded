@@ -869,8 +869,9 @@ static void slider(Ui *ui, const char *label, const char *cvar, float lo, float 
 }
 
 // A box showing names[current] that opens the list to pick from; the side keys step
-// along it, past the locked. What was picked, or -1.
-static int select_box(Ui *ui, const char *label, const char *const *names, const bool *locked, int count, int current)
+// along it, past the locked. What was picked, or -1; preview_index follows its highlight.
+static int select_box(Ui *ui, const char *label, const char *const *names, const bool *locked, int count, int current,
+                      int *preview_index)
 {
     MainMenu *m = ui->m;
     Row r = row(ui, ROW_H, true);
@@ -892,6 +893,12 @@ static int select_box(Ui *ui, const char *label, const char *const *names, const
         open = !open;
     }
     if (open) popup_fill_list(&m->popup, names, locked, count); // what is locked may change with the rest
+    if (preview_index) {
+        *preview_index = picked >= 0 && picked < count ? picked : current;
+        if (open && m->popup.hover >= 0 && m->popup.hover < count &&
+            (!locked || !locked[m->popup.hover]))
+            *preview_index = m->popup.hover;
+    }
     if (!r.shown) return picked;
     row_label(&r, label);
     box(cx, cy, cw, CTRL_H, r.hot || open ? CONTROL_HOT : CONTROL, open ? with_alpha(ACCENT, 200) : BORDER);
@@ -904,16 +911,21 @@ static int select_box(Ui *ui, const char *label, const char *const *names, const
 }
 
 // A cvar that takes one of `values`, each named; one that is none of them shows as the
-// first. The locked (NULL for none) are shown but never set.
-static void cvar_select(Ui *ui, const char *label, const char *cvar, const int *values, const char *const *names, const bool *locked,
-                        int count)
+// first. The locked (NULL for none) are shown but never set. Returns the preview value.
+static int cvar_select(Ui *ui, const char *label, const char *cvar, const int *values, const char *const *names,
+                       const bool *locked, int count)
 {
     const Cvar *cv = cvar_find(ui->con, cvar);
     int current = 0;
     for (int i = 0; i < count; i++)
         if (cv && cv->integer == values[i]) current = i;
-    int picked = select_box(ui, label, names, locked, count, current);
-    if (picked >= 0 && picked < count && !(locked && locked[picked])) set_int(ui->con, cvar, values[picked]);
+    int preview = current;
+    int picked = select_box(ui, label, names, locked, count, current, &preview);
+    if (picked >= 0 && picked < count && !(locked && locked[picked])) {
+        set_int(ui->con, cvar, values[picked]);
+        preview = picked;
+    }
+    return values[preview];
 }
 
 #define SERVER_DOUBLE_CLICK 0.4 // seconds between the clicks that join a row, or select a text box's text
@@ -1755,9 +1767,10 @@ static const char *const HEAD_STYLES[] = {"None", "Helmet", "Hat", "Waifu helmet
 static const char *const CHAIN_STYLES[] = {"None", "Dog tags", "Gold chain"};
 static const char *const SECONDARIES[] = {"USSOCOM", "Combat Knife", "Chainsaw", "LAW"};
 
-// The gostek as the cvars dress it, standing, at `at` in the menu's units, `scale`
-// times its size in the world. Drawn from the art of the style the cvars choose.
-static void preview(Ui *ui, const Gostek *gostek, const Context *ctx, Vec2 at, float scale)
+// The gostek as dressed, standing, at `at` in the menu's units, `scale` times its size
+// in the world. Its look includes the currently highlighted list choice.
+static void preview(Ui *ui, const Gostek *gostek, const Context *ctx, const PlayerLook *look, WeaponId weapon,
+                    WeaponId secondary, Vec2 at, float scale)
 {
     if (!gostek || !ctx || !ctx->anims) return;
     const Anims *anims = ctx->anims;
@@ -1769,23 +1782,13 @@ static void preview(Ui *ui, const Gostek *gostek, const Context *ctx, Vec2 at, f
         .active = true,
         .team = TEAM_NONE,
         .pose = soldier_pose(anims, &s, vec2(0, 0)),
-        .weapon = (WeaponId)cvar_int(con, "cl_player_wep", WEAPON_EAGLE, WEAPON_MINIGUN),
-        .secondary = (WeaponId)(WEAPON_COLT + cvar_int(con, "cl_player_secwep", 0, WEAPON_LAW - WEAPON_COLT)),
+        .weapon = weapon,
+        .secondary = secondary,
         .health = DEFAULT_HEALTH,
         .grenades = 1,
         .body_anim = ANIM_STAND,
         .wear_helmet = 1, // on the head, so the chosen headgear shows
-        .look = {
-            .shirt = cvar_color(con, "cl_player_shirt"),
-            .pants = cvar_color(con, "cl_player_pants"),
-            .skin = cvar_color(con, "cl_player_skin"),
-            .hair = cvar_color(con, "cl_player_hair"),
-            .jet = cvar_color(con, "cl_player_jet"),
-            .hair_style = (uint8_t)cvar_int(con, "cl_player_hairstyle", 0, 6),
-            .head_style = (uint8_t)cvar_int(con, "cl_player_headstyle", 0, 3),
-            .chain_style = (uint8_t)cvar_int(con, "cl_player_chainstyle", 0, 2),
-            .style = (uint8_t)cvar_int(con, "cl_player_style", 0, GOSTEK_STYLE_COUNT - 1),
-        },
+        .look = *look,
     };
     // the chain's and the dreadlocks' points, at rest, as soldier_swing would settle them
     // on a soldier standing still: each end hanging straight down from its anchor by its
@@ -1820,25 +1823,27 @@ static void page_player(Ui *ui, const Gostek *gostek, const Context *ctx)
 {
     float x = ui->x, w = ui->w, pw = clampf(w * 0.34f, 150, 220);
     ui->w = w - pw - 20;
-    int style = cvar_int(ui->con, "cl_player_style", 0, GOSTEK_STYLE_COUNT - 1);
-    bool plain = style == GOSTEK_STYLE_RAT || style == GOSTEK_STYLE_FURRY; // they wear only some hair, and no headgear
 
     section(ui, "IDENTITY");
     field_row(ui, "Name", "cl_player_name", NET_NAME_SIZE - 1, "Major", false);
     section(ui, "LOOK");
+    int style, hair_style, head_style, chain_style, primary_weapon, secondary_weapon;
     {
         static const int STYLES[] = {GOSTEK_STYLE_MALE, GOSTEK_STYLE_FEMALE, GOSTEK_STYLE_WAIFU, GOSTEK_STYLE_RAT, GOSTEK_STYLE_FURRY};
         static const char *const STYLE_NAMES[] = {"Male", "Female", "Waifu", "Rat", "Furry"};
-        cvar_select(ui, "Style", "cl_player_style", STYLES, STYLE_NAMES, NULL, 5);
+        style = cvar_select(ui, "Style", "cl_player_style", STYLES, STYLE_NAMES, NULL, 5);
+        bool plain = style == GOSTEK_STYLE_RAT || style == GOSTEK_STYLE_FURRY; // they wear only some hair, and no headgear
         static const int HAIR_VALUES[] = {0, 1, 2, 3, 4, 5, 6};
         // the rat and the furry wear only army, punk and Mr. T; everyone else may wear all six
         static const bool RAT_HAIR_LOCKED[] = {false, true, false, false, true, true, true};
-        cvar_select(ui, "Hair", "cl_player_hairstyle", HAIR_VALUES, HAIR_STYLES, plain ? RAT_HAIR_LOCKED : NULL, 7);
+        hair_style = cvar_select(ui, "Hair", "cl_player_hairstyle", HAIR_VALUES, HAIR_STYLES,
+                                 plain ? RAT_HAIR_LOCKED : NULL, 7);
         static const int HEAD_VALUES[] = {0, 1, 2, 3};
         static const bool RAT_HEAD_LOCKED[] = {false, true, true, true};
-        cvar_select(ui, "Headgear", "cl_player_headstyle", HEAD_VALUES, HEAD_STYLES, plain ? RAT_HEAD_LOCKED : NULL, 4);
+        head_style = cvar_select(ui, "Headgear", "cl_player_headstyle", HEAD_VALUES, HEAD_STYLES,
+                                 plain ? RAT_HEAD_LOCKED : NULL, 4);
         static const int CHAIN_VALUES[] = {0, 1, 2};
-        cvar_select(ui, "Chain", "cl_player_chainstyle", CHAIN_VALUES, CHAIN_STYLES, NULL, 3);
+        chain_style = cvar_select(ui, "Chain", "cl_player_chainstyle", CHAIN_VALUES, CHAIN_STYLES, NULL, 3);
     }
     section(ui, "COLOURS");
     color_row(ui, "Shirt", "cl_player_shirt");
@@ -1855,9 +1860,9 @@ static void page_player(Ui *ui, const Gostek *gostek, const Context *ctx)
             values[count] = i;
             names[count++] = ctx && ctx->weapons.info[i].name ? ctx->weapons.info[i].name : "?";
         }
-        cvar_select(ui, "Primary", "cl_player_wep", values, names, NULL, count);
+        primary_weapon = cvar_select(ui, "Primary", "cl_player_wep", values, names, NULL, count);
         static const int SECONDARY_VALUES[] = {0, 1, 2, 3};
-        cvar_select(ui, "Secondary", "cl_player_secwep", SECONDARY_VALUES, SECONDARIES, NULL, 4);
+        secondary_weapon = cvar_select(ui, "Secondary", "cl_player_secwep", SECONDARY_VALUES, SECONDARIES, NULL, 4);
     }
     gap(ui, 4);
     Row note = row(ui, 22, false);
@@ -1873,7 +1878,19 @@ static void page_player(Ui *ui, const Gostek *gostek, const Context *ctx)
     fit(F_BOLD, name, sizeof name, cv && cv->value[0] ? cv->value : "Major", pw - 20);
     text_at(F_BOLD, name, px + (pw - width_of(F_BOLD, name)) / 2, py + 14, TEXT);
     rrect(px + pw / 2 - 34, floor_y - 2, 60, 5, 2.5f, (Rgba){0, 0, 0, 90}); // the ground under it
-    preview(ui, gostek, ctx, vec2(px + pw / 2 - 2 * scale, floor_y), scale);
+    PlayerLook look = {
+        .shirt = cvar_color(ui->con, "cl_player_shirt"),
+        .pants = cvar_color(ui->con, "cl_player_pants"),
+        .skin = cvar_color(ui->con, "cl_player_skin"),
+        .hair = cvar_color(ui->con, "cl_player_hair"),
+        .jet = cvar_color(ui->con, "cl_player_jet"),
+        .hair_style = (uint8_t)hair_style,
+        .head_style = (uint8_t)head_style,
+        .chain_style = (uint8_t)chain_style,
+        .style = (uint8_t)style,
+    };
+    preview(ui, gostek, ctx, &look, (WeaponId)primary_weapon, (WeaponId)(WEAPON_COLT + secondary_weapon),
+            vec2(px + pw / 2 - 2 * scale, floor_y), scale);
 }
 
 // --- the controls -------------------------------------------------------------------
@@ -2128,12 +2145,12 @@ static void page_taunts(Ui *ui)
             snprintf(labels[i], sizeof labels[i], "%.*s - %.*s", 20, c ? c->value : "?", 12, p ? p->value : "?");
             names[i] = labels[i];
         }
-        int picked = select_box(ui, "Radio", names, NULL, 10, m->taunt_radio);
+        int picked = select_box(ui, "Radio", names, NULL, 10, m->taunt_radio, NULL);
         if (picked >= 0) m->taunt_radio = picked;
     }
     {
         static const char *const MOD_NAMES[] = {"Alt", "Ctrl", "Shift"};
-        int picked = select_box(ui, "Modifier", MOD_NAMES, NULL, TAUNT_MODS, m->taunt_mod);
+        int picked = select_box(ui, "Modifier", MOD_NAMES, NULL, TAUNT_MODS, m->taunt_mod, NULL);
         if (picked >= 0) m->taunt_mod = picked;
     }
     section(ui, "KEY");
@@ -2242,7 +2259,7 @@ static void page_graphics(Ui *ui)
             names[count] = labels[count];
             current = count++;
         }
-        int picked = select_box(ui, "Resolution", names, NULL, count, current);
+        int picked = select_box(ui, "Resolution", names, NULL, count, current, NULL);
         if (picked >= 0 && picked < RESOLUTION_COUNT) {
             set_int(con, "r_screenwidth", RESOLUTIONS[picked].w);
             set_int(con, "r_screenheight", RESOLUTIONS[picked].h);
@@ -2270,7 +2287,7 @@ static void page_graphics(Ui *ui)
             values[count++] = limit;
         }
         for (int i = 0; i < count; i++) names[i] = labels[i];
-        int picked = select_box(ui, "Frame rate limit", names, NULL, count, current);
+        int picked = select_box(ui, "Frame rate limit", names, NULL, count, current, NULL);
         if (picked >= 0 && picked < count && picked != current) {
             set_int(con, "r_fpslimit", values[picked] != 0);
             if (values[picked]) set_int(con, "r_maxfps", values[picked]);
@@ -2889,4 +2906,3 @@ void mainmenu_open_page(MainMenu *m, MainPage page)
     go_page(m, page);
     m->zone = MAIN_ZONE_RAIL;
 }
-
