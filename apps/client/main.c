@@ -136,6 +136,7 @@ typedef struct App {
     Cvar *forcebg, *forcebg_color1, *forcebg_color2; // the sky in colours of my own instead of the map's (r_forcebg)
     Cvar *minimap, *info, *player_names, *console_length;
     Cvar *team_names, *typing_style; // ui_teamnames, ui_typing
+    Cvar *legacy_flag_throw; // cl_legacy_flag_throw: w+s (jump+crouch together) throws the flag, as older versions did
     Cvar *kill_length, *kill_position; // ui_killconsole_length, ui_killconsole_pos
     Cvar *player_name;
     Cvar *grenade_color;
@@ -232,6 +233,7 @@ typedef struct App {
     uint32_t tracking_shot; // which shot: its number
     Buttons camera_keys; // last tick's, so a press switches once
     bool limbo_lock;       // the weapons menu closed while dead stays closed (the original's LimboLock)
+    uint32_t death_menu_life; // the life the death menu armed at: a predicted respawn undone by a rewind does not re-arm it
     double accumulator;
     bool quit;
 
@@ -1291,6 +1293,8 @@ static bool console_open(App *app, int argc, char *argv[])
                                     "1: teammates' names by them always, not only at the screen's edge when out of view (with ui_playernames)");
     app->typing_style = cvar_register(con, "ui_typing", "1", CVAR_ARCHIVE,
                                       "over a player typing: 0 nothing, 1 the original's dots, 2 \"Typing...\"");
+    app->legacy_flag_throw = cvar_register(con, "cl_legacy_flag_throw", "0", CVAR_ARCHIVE,
+                                           "1: jump and crouch held together (w+s) throw the flag, as older versions did");
     app->kill_length = cvar_register(con, "ui_killconsole_length", "15", CVAR_ARCHIVE,
                                      "the kill console's lines, two a kill, 0 to 50; 0 shows none");
     app->kill_position = cvar_register(con, "ui_killconsole_pos", "0", CVAR_ARCHIVE,
@@ -1762,7 +1766,7 @@ static void tick(App *app)
         s->remote = online && i != app->me;
         if (s->remote) cmds[i] = stream_command(s, client_stream_quiet(&app->net.stream, i));
     }
-    Command input = input_command(&app->input, ++app->seq);
+    Command input = input_command(&app->input, ++app->seq, app->legacy_flag_throw->integer != 0);
     cmds[app->me] = playing ? app->demo_tick.cmd : input;
     // scoped before the tick: the shot snaps the sniper view back within it
     const Soldier *shooter = &w->soldiers[app->me];
@@ -1807,9 +1811,10 @@ static void tick(App *app)
     bool first_life = me->active && !spectator && app->seen_life < 0;
     if (me->active && !spectator) app->seen_life = me->life;
     if (!playing) { // a demo's recorder picks nothing here
-        if (dead && !app->was_dead) {
+        if (dead && !app->was_dead && me->life != app->death_menu_life) {
             app->death_menu_tick = w->tick;
             app->death_menu_pending = true;
+            app->death_menu_life = me->life;
         } else if (!dead) {
             app->death_menu_pending = false;
         }
@@ -1926,6 +1931,7 @@ static void apply_menu_action(App *app, MenuAction action)
         cvar_set(app->console, "cl_player_wep", number);
         app->hud_data.selected_weapon = (WeaponId)action.value;
         if (!me->dead) me->weapon = weapon_state(&app->game->ctx, (WeaponId)action.value);
+        app->death_menu_pending = false; // a pick closed the menu: this death will not bring it up again
         break;
     }
     case MENU_ACTION_PICK_SECONDARY: {
@@ -2367,6 +2373,7 @@ static bool world_reload(App *app, const char *map)
     app->was_dead = false;
     app->death_menu_pending = false;
     app->death_menu_tick = 0;
+    app->death_menu_life = 0; // a new world's lives start over; an old life can't match
     app->was_watching = false;
     app->seen_life = -1;
     app->team_asked = false;

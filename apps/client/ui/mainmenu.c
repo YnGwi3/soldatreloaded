@@ -2006,6 +2006,8 @@ static void page_controls(Ui *ui)
     ui->x = x;
     ui->w = w;
     ui->y = maxf(ends[0], ends[1]);
+    gap(ui, 6);
+    toggle(ui, "Legacy flag throw", "cl_legacy_flag_throw");
 }
 
 // --- the taunts ---------------------------------------------------------------------
