@@ -58,11 +58,11 @@ void menus_init(GameMenus *m, float game_width, const Weapons *weapons)
         const char *name = weapons->info[i + 1].name;
         if (i < PRIMARY_WEAPONS) snprintf(caption, sizeof(caption), "%d %s", (i + 1) % 10, name);
         else snprintf(caption, sizeof(caption), "%s", name);
-        button_init(limbo, i, caption, 35, (float)(154 + 18 * (i + (i >= PRIMARY_WEAPONS))), 235, 16, true);
+        button_init(limbo, i, caption, 35, (float)(154 + 18 * (i + (i >= PRIMARY_WEAPONS))), 235, 18, true);
     }
     // The boots under the weapons: the gear of the next spawn, jets or a rope. The
     // caption names the current one and a click switches, as the weapons do.
-    button_init(limbo, MAIN_WEAPONS, "Boots: Jet", 35, (float)(154 + 18 * (MAIN_WEAPONS + 1)), 235, 16, true);
+    button_init(limbo, MAIN_WEAPONS, "Boots: Jet", 35, (float)(154 + 18 * (MAIN_WEAPONS + 1)), 235, 18, true);
     gear_caption(m);
 
     GameMenu *kick = &m->menus[MENU_KICK];
@@ -228,6 +228,8 @@ static MenuAction menu_action(GameMenus *m, MenuId id, int button)
             menus_show(m, MENU_LIMBO, false, 0, 0);
             return (MenuAction){MENU_ACTION_PICK_PRIMARY, weapon};
         }
+        // a secondary's pick leaves the menu open (Soldat 1): the primary next to it is
+        // still to choose; a primary's closes it at the first click
         return (MenuAction){MENU_ACTION_PICK_SECONDARY, weapon};
     }
     default: return none;

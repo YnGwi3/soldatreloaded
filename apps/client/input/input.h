@@ -73,8 +73,9 @@ bool input_event(Input *in, Console *con, const SDL_Event *e);
 void input_sample(Input *in, Vec2 aim);
 
 // The command for this tick, numbered: the server runs them in order and says which it
-// has run, and the client replays the rest. Held buttons and this tick's presses.
-Command input_command(const Input *in, uint32_t seq);
+// has run, and the client replays the rest. Held buttons and this tick's presses; with
+// cl_legacy_flag_throw on, jump and crouch held together throw the flag.
+Command input_command(const Input *in, uint32_t seq, bool legacy_flag_throw);
 
 void input_clear(Input *in);
 
