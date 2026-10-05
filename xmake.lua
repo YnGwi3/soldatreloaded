@@ -17,7 +17,7 @@
 -- player's, and not the project's.
 
 set_project("soldatreloaded")
-set_version("0.8.1")
+set_version("0.8.2")
 includes("@builtin/xpack")
 
 add_rules("mode.debug", "mode.release")
