@@ -21,10 +21,14 @@ void camera_follow(GameCamera *c, Vec2 target, Vec2 cursor, float aim_dist, doub
     // UpdateFrame.pas: the lead is the offset over the aim distance, with the original's
     // wide-screen term, and its correction for a scoped aim distance on a wide view
     float factor = (2.0f * 640.0f / game_w - 1.0f) + (game_w - 640.0f) / game_w * (DEFAULT_AIM_DIST - aim_dist) / 6.8f;
+    // The original's tick, pos += (target - pos) * CAMSPEED + lead, settles at target +
+    // lead / CAMSPEED; closing on that point by the ticks' share is the same path at any
+    // frame rate (adding the lead per frame would settle short of it, 7% at high fps).
     float ticks = (float)dt * TICK_RATE;
     float k = 1.0f - powf(1.0f - CAMERA_SPEED, ticks);
-    c->pos.x += (target.x - c->pos.x) * k + off.x / aim_dist * factor * ticks;
-    c->pos.y += (target.y - c->pos.y) * k + off.y / aim_dist * ticks;
+    Vec2 rest = {target.x + off.x / aim_dist * factor / CAMERA_SPEED, target.y + off.y / aim_dist / CAMERA_SPEED};
+    c->pos.x += (rest.x - c->pos.x) * k;
+    c->pos.y += (rest.y - c->pos.y) * k;
 }
 
 Vec2 screen_to_world(const GameCamera *c, Vec2 p)
