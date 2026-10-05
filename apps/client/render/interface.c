@@ -991,7 +991,8 @@ static void draw_chat_input(const Frame *f, const HudData *d)
     text_align(TEXT_TOP);
 }
 
-// What each player says, over their head, and the dots while they type.
+// What each player says, over their head, and the dots while they type: not over the dead
+// or a spectator, who have no head on the field to put it over.
 static void draw_chat_texts(const Frame *f, const HudData *d, const RenderState *state)
 {
     text_style(FONT_SMALL);
@@ -1000,7 +1001,7 @@ static void draw_chat_texts(const Frame *f, const HudData *d, const RenderState 
         const HudPlayer *p = &d->players[i];
         const RenderSoldier *s = &state->soldiers[i];
         bool typing = p->typing && d->typing_style > 0;
-        if (!p->active || !s->active || (!typing && p->chat_delay <= 0)) continue;
+        if (!p->active || !s->active || p->dead || p->spectator || (!typing && p->chat_delay <= 0)) continue;
         Vec2 at = world_to_interface(f, s->pose.p[12 - 1]);
         float dy = -25;
         if (typing) { // the dots stepping one to three, after "Typing" if asked (ui_typing)
