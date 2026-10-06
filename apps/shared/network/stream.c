@@ -407,6 +407,12 @@ static void frame_apply(ClientStream *c, Game *g, int me, int k)
             // one the pause holds, a little behind where mine had got to, and the game
             // goes on from it for everyone alike
             if (placed || g->match.state == MATCH_PAUSED) soldier_copy_owned(g->ctx.anims, s, heard);
+            // A loadout picked while dead can reach the server after it has already
+            // respawned me with the previous one. Apply my choice to this new life; the
+            // next client state carries it back to the server as well.
+            if (placed && weapon_is_primary(primary) && weapon_is_secondary(secondary) &&
+                (s->weapon.id != primary || s->secondary.id != secondary))
+                soldier_arm(&g->ctx, s, primary, secondary);
         }
     }
     for (int i = 0; i < MAX_THINGS; i++) {
