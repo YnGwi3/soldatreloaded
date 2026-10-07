@@ -455,9 +455,13 @@ void parachute_deploy(const Context *ctx, World *w, uint8_t soldier);
 void parachute_update(const Context *ctx, World *w, int index);
 
 // The holder's side, in its own step, reading the parachute back: before integrating,
-// a canopy that turned over catches the fall for a tick; after, the lift for the next.
+// a canopy that turned over catches the fall for a tick; after, the lift for the next,
+// and whether the soldier hangs from it, which the next step's left and right read.
 void parachute_catch(World *w, Soldier *s);
 void parachute_carry(World *w, Soldier *s);
+
+// A holder's steer, in the things pass's mail (EVENT_PARACHUTE_STEER).
+void parachute_steer(World *w, const EventParachuteSteer *e);
 
 // --- stat_gun.c --------------------------------------------------------------------
 

@@ -629,6 +629,7 @@ void things_update(const Context *ctx, World *w, const Events *last, Events *eve
         case EVENT_FLAG_THROW: flag_throw(ctx, w, e->flag_throw.player); break;
         case EVENT_RESPAWN: things_on_respawn(ctx, w, e->respawn.target); break;
         case EVENT_THING_KNOCK: thing_knock(w, &e->thing_knock); break;
+        case EVENT_PARACHUTE_STEER: parachute_steer(w, &e->parachute_steer); break;
         default: break;
         }
     }

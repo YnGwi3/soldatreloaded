@@ -39,6 +39,7 @@ WireSide wire_side(EventType type)
     case EVENT_CORPSE_HIT:
     case EVENT_ANTIC:
     case EVENT_ROPE_CUT:
+    case EVENT_PARACHUTE_STEER:
     case EVENT_ECHO_TEST: return WIRE_LOCAL;
     }
     return WIRE_LOCAL;
@@ -214,8 +215,8 @@ void wire_event(NetBuf *b, Event *e)
         uint32_t blast = s->blast;
         net_range(b, &blast, 3); // 0 stopped, else an ExplosionKind + 1
         s->blast = (uint8_t)blast;
-        break;
         net_u8(b, &s->target); // 255: none told
+        break;
     }
     default: b->bad = true; break; // a local event has no place on the wire
     }

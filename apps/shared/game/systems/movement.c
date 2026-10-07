@@ -12,8 +12,8 @@
 // ControlSoldier; the feel depends on that order:
 //
 //   resolve_left_right -> jets_control -> combat_control -> prone_control
-//   -> combat_after_prone -> animation_slowdown -> cover_check -> movement_control
-//   -> combat_reload_animation -> roll_control -> body_pose_control
+//   -> combat_after_prone -> animation_slowdown -> cover_check -> antics_interrupt
+//   -> movement_control -> combat_reload_animation -> roll_control -> body_pose_control
 //
 // Ported from OpenSoldat Sprites.pas / Control.pas by way of soldat-odin.
 //
@@ -323,17 +323,38 @@ static void move_jump(const Anims *anims, Soldier *s)
     }
 }
 
-static void move_run(const Anims *anims, Soldier *s, ControlInput input)
+// Under a parachute the legs don't run: the key steers the canopy, which is the things
+// pass's to pull (the original writes the held thing's forces from here).
+static void move_run(const Anims *anims, Soldier *s, ControlInput input, Events *events)
 {
     float sign = input.right ? 1.0f : -1.0f;
-    legs_apply(anims, s, (s->direction == 1) == input.right ? ANIM_RUN : ANIM_RUN_BACK, 1);
+    if (!s->para) {
+        legs_apply(anims, s, (s->direction == 1) == input.right ? ANIM_RUN : ANIM_RUN_BACK, 1);
+    } else if (s->held) {
+        event_emit(events, (Event){
+            .type = EVENT_PARACHUTE_STEER,
+            .parachute_steer = {.thing = (uint8_t)(s->held - 1), .way = input.right ? 1 : -1},
+        });
+    }
     if (s->on_ground) s->forces = vec2(sign * RUNSPEED, -RUNSPEEDUP);
     else s->forces.x = sign * FLYSPEED;
 }
 
+// A key pressed ends an idle antic at once (Control.pas): on its last frame, the body's
+// pose takes the stance's back.
+static void antics_interrupt(const Anims *anims, Soldier *s, ControlInput input)
+{
+    Anim *body = &s->body;
+    bool antic = body->id == ANIM_CIGAR || body->id == ANIM_MATCH || body->id == ANIM_SMOKE || body->id == ANIM_WIPE ||
+                 body->id == ANIM_GROIN;
+    const Buttons keys = BUTTON_FIRE | BUTTON_THROW | BUTTON_CHANGE | BUTTON_DROP | BUTTON_RELOAD;
+    bool pressed = input.left || input.right || input.up || input.down || input.jet || input.prone || (s->controls & keys);
+    if (antic && pressed) body->frame = anim_frames(anims, body->id);
+}
+
 // Locomotion: one situation wins per tick, in priority order: rolling, crouch-slide,
 // prone crawl, side jump, jump, crouch, run, idle. Some body poses freeze it.
-static void movement_control(const Context *ctx, Soldier *s, ControlInput input)
+static void movement_control(const Context *ctx, Soldier *s, ControlInput input, Events *events)
 {
     const Anims *anims = ctx->anims;
     Anim *legs = &s->legs, *body = &s->body;
@@ -367,7 +388,7 @@ static void movement_control(const Context *ctx, Soldier *s, ControlInput input)
     } else if (input.down) {
         if (s->on_ground) legs_apply(anims, s, ANIM_CROUCH, 1);
     } else if (sideways) {
-        move_run(anims, s, input);
+        move_run(anims, s, input, events);
     } else {
         legs_apply(anims, s, s->on_ground ? ANIM_STAND : ANIM_FALL, 1);
     }
@@ -537,10 +558,9 @@ void soldier_control(const Context *ctx, World *w, uint8_t index, Events *events
         if (armed) combat_after_prone(ctx, w, s);
     }
     animation_slowdown(s);
-    if (afoot) {
-        cover_check(ctx, w, index);
-        movement_control(ctx, s, input);
-    }
+    if (afoot) cover_check(ctx, w, index);
+    antics_interrupt(ctx->anims, s, input);
+    if (afoot) movement_control(ctx, s, input, events);
     if (armed) combat_reload_animation(ctx, s);
     if (afoot) roll_control(ctx, s, input);
     body_pose_control(ctx, s);

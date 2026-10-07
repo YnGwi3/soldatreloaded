@@ -322,6 +322,7 @@ void soldier_copy_rest(Soldier *dst, const Soldier *src)
     dst->hit_spray = src->hit_spray;
     dst->idle = src->idle;
     dst->dont_drop = src->dont_drop;
+    dst->para = src->para;
     dst->legs.count = src->legs.count;
     dst->body.count = src->body.count;
 }

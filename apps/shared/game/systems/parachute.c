@@ -90,5 +90,16 @@ void parachute_catch(World *w, Soldier *s)
 
 void parachute_carry(World *w, Soldier *s)
 {
-    if (parachute_of(w, s)) s->forces.y = PARA_SPEED;
+    s->para = parachute_of(w, s) != NULL;
+    if (s->para) s->forces.y = PARA_SPEED;
+}
+
+// The canopy's corners are points 1 and 2: steering right pulls 1 down and lifts 2, left
+// the other way (Control.pas, the left and right keys under a parachute).
+void parachute_steer(World *w, const EventParachuteSteer *e)
+{
+    Thing *t = &w->things[e->thing];
+    if (t->style == THING_NONE || t->points < 3) return;
+    t->forces[1].y += 0.5f * (float)e->way;
+    t->forces[2].y -= 0.5f * (float)e->way;
 }

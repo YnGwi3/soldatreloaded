@@ -298,6 +298,9 @@ typedef struct Soldier {
     uint8_t wear_helmet; // 1 on the head, 2 taken off (WearHelmet)
     bool can_mercy;      // the mercy antic goes on the second ask (CanMercy)
     bool dont_drop; // a knife just thrown: the held drop key throws nothing more until released
+    // Hung from a parachute as the last step ended (Para, set with the lift): left and
+    // right steer the canopy then, and don't run the legs.
+    bool para;
 
     // the server's
     uint8_t held;                // the flag carried or the parachute hung from (thing index + 1)
@@ -497,6 +500,9 @@ typedef struct EventThingHit { ThingStyle thing; Vec2 pos, vel; uint8_t part; } 
 // A bullet struck a thing: the things pass knocks point `part` of thing `thing` along
 // the bullet's velocity, by the weapon's push.
 typedef struct EventThingKnock { uint8_t thing, part; Vec2 vel; float push; } EventThingKnock;
+// A soldier hung from a parachute steered with left (`way` -1) or right (1): the things
+// pass pulls that side of thing `thing`'s canopy down and lifts the other.
+typedef struct EventParachuteSteer { uint8_t thing; int8_t way; } EventParachuteSteer;
 // A hurting, lava, regenerating or exploding poly touched.
 typedef struct EventPolyEffect { uint8_t target; PolyType type; Vec2 pos; bool spark; } EventPolyEffect;
 // A corpse's point struck the map hard enough to be heard: how far it fell that tick,
@@ -555,6 +561,7 @@ typedef enum EventType {
     EVENT_ANTIC,
     EVENT_ROPE_CUT,
     EVENT_SHOT_END,
+    EVENT_PARACHUTE_STEER, // after the ones that travel, so none of their numbers moves
     EVENT_ECHO_TEST, // the last: wire_event's net_range tops out at it, so nothing may follow
 } EventType;
 
@@ -594,6 +601,7 @@ typedef struct Event {
         EventAntic antic;
         EventRopeCut rope_cut;
         EventShotEnd shot_end;
+        EventParachuteSteer parachute_steer;
         EventEchoTest echo;
     };
 } Event;
