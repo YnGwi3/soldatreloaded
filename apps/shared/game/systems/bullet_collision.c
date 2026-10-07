@@ -494,7 +494,7 @@ static bool body_collide(const Context *ctx, World *w, Bullet *b, uint16_t index
             bool friendly = !w->rules.friendly_fire && owner->team != TEAM_NONE && owner->team == live->team;
             if (!friendly && live->bonus != BONUS_FLAME_GOD) blood(events, b, ti, point);
             wound(ctx, w, events, b, ti, vec2_length(b->vel) * b->hit_multiply * modifier, &pose, part, point, push, false);
-            shot_end_tell(w, b, point, 0, events);
+            shot_end_tell(w, b, point, 0, 255, events);
             bullet_end(b, index, events, &point);
             return true;
         }
@@ -543,7 +543,7 @@ static bool body_collide(const Context *ctx, World *w, Bullet *b, uint16_t index
             }
         }
             knife_land(b, events);
-            shot_end_tell(w, b, point, 0, events);
+            shot_end_tell(w, b, point, 0, (uint8_t)ti, events);
             bullet_end(b, index, events, &point);
             return true;
         case BULLET_CLUSTER_NADE:

@@ -624,7 +624,8 @@ void things_update(const Context *ctx, World *w, const Events *last, Events *eve
         switch (e->type) {
         case EVENT_WEAPON_DROP: dropped_gun_drop(ctx, w, &e->weapon_drop); break;
         case EVENT_KNIFE_LAND: thrown_knife_land(ctx, w, &e->knife_land); break;
-        case EVENT_KILL: things_let_go(w, e->kill.target, events); break;
+        // the drop is the server's word, sent on the wire; a client's own would tell it twice
+        case EVENT_KILL: things_let_go(w, e->kill.target, w->authority ? events : NULL); break;
         case EVENT_FLAG_THROW: flag_throw(ctx, w, e->flag_throw.player); break;
         case EVENT_RESPAWN: things_on_respawn(ctx, w, e->respawn.target); break;
         case EVENT_THING_KNOCK: thing_knock(w, &e->thing_knock); break;

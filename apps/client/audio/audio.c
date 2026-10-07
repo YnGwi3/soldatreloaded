@@ -411,7 +411,9 @@ static void audio_event(Audio *a, const Event *e, const World *w, int me)
         }
         break;
     case EVENT_RESPAWN:
-        if (e->respawn.target == me) sound_play(a, "wermusic.wav", e->respawn.pos);
+        // one's own at the listener: the original's is at MySprite, its listener, and this
+        // tick's listener may still be the soldier watched while it was dead
+        if (e->respawn.target == me) audio_flat(a, "wermusic.wav");
         else sound_play(a, "spawn.wav", e->respawn.pos);
         break;
     case EVENT_POLY_EFFECT:
@@ -424,13 +426,12 @@ static void audio_event(Audio *a, const Event *e, const World *w, int me)
         default: break;
         }
         break;
-    // The flag's sounds. A score is heard wherever you are, flat, as the original's
-    // (ClientHandleFlagInfo). The grab, the return and the drop are from where they
-    // happened: the original places the grab and plays the return and the drop flat, so
-    // a flag returned across the map sounds as if it were returned beside you; a
-    // departure, on purpose.
+    // The flag's sounds. A score and a return are heard wherever you are, flat, as the
+    // original's (ClientHandleFlagInfo), a flag timed out back to its base among the
+    // returns. The grab and the drop are from where they happened: the original places
+    // the grab and plays the drop flat; a departure, on purpose.
     case EVENT_FLAG_GRAB: sound_play(a, "capture.wav", e->flag_grab.pos); break;
-    case EVENT_FLAG_RETURN: sound_play(a, "capture.wav", e->flag_return.pos); break;
+    case EVENT_FLAG_RETURN: audio_flat(a, "capture.wav"); break;
     case EVENT_FLAG_SCORE: audio_flat(a, "ctf.wav"); break;
     case EVENT_FLAG_DROP:
         if (w->soldiers[e->flag_drop.player].team == w->soldiers[me].team) sound_play(a, "infilt-point.wav", e->flag_drop.pos);
@@ -725,18 +726,21 @@ void audio_tick(Audio *a, const Game *g, int me, int followed, Vec2 camera, cons
     a->camera = camera;
     a->listener = followed >= 0 ? w->soldiers[followed].pos : camera;
     if (a->ringing > -1) a->ringing--;
-    // paused, the soldiers' loops stop (ClientHandleServerSyncMsg): a jet or a reload
-    // would sound on for as long as the pause lasts; nothing new sounds till it ends
-    if (g->match.state == MATCH_PAUSED) {
+    // the round standing, paused or ended, the soldiers' loops stop (ClientHandleServerSyncMsg,
+    // and the map change's): their buttons stay held through it, so a jet or a reload would
+    // sound on for as long as it lasts; paused, nothing new sounds till it ends
+    if (w->rules.frozen)
         for (int slot = 0; slot < MAX_PLAYERS; slot++)
             for (int v = 0; v < VOICE_COUNT; v++) voice_stop(a, slot, (ReservedVoice)v);
-        return;
-    }
+    if (g->match.state == MATCH_PAUSED) return;
     audio_clock(a, &g->match);
     for (int i = 0; i < g->events.count; i++) audio_event(a, &g->events.items[i], w, me);
-    for (int i = 0; i < MAX_PLAYERS; i++) audio_soldier(a, &g->ctx, i, &w->soldiers[i], w->tick);
+    // ended, the soldiers stand silent, and the sparks, hanging, make no noise
+    if (!w->rules.frozen) {
+        for (int i = 0; i < MAX_PLAYERS; i++) audio_soldier(a, &g->ctx, i, &w->soldiers[i], w->tick);
+        audio_sparks(a, sparks);
+    }
     audio_bullets(a, &g->ctx, w, followed);
-    audio_sparks(a, sparks);
 
     // the weather (WeatherEffects.pas): the wind, the one loop the original gives rain,
     // sandstorm and snow alike, from the camera, kept up by being played every tick

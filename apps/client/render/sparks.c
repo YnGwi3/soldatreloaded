@@ -23,6 +23,7 @@
 #define BLOOD_RANDOM_HIGH 6
 #define LESSBLEED_TIME 120 // ticks dead after which a body bleeds less, then not at all
 #define NOBLEED_TIME 300
+#define HURT_HEALTH 25 // below this a soldier drips blood as it goes
 #define CLUSTER_EXPLOSION_RADIUS 35.0f
 // A burning body flames for this long, one in this many ticks per burning point, by how
 // busy the screen is (ONFIRE_TIME, FIRE_RANDOM_LOW, _NORMAL, _HIGH).
@@ -474,6 +475,24 @@ static void corpses(Sparks *s, const Context *ctx, const World *w)
     }
 }
 
+// The badly hurt drip as they go (TSprite.Update's live branch): under HURT_HEALTH, now
+// and then a drop of blood off the hip, thrown the way the body moves; half as often
+// while the screen is already full of sparks.
+static void wounded(Sparks *s, const Context *ctx, const World *w)
+{
+    int live = 0;
+    for (int i = 0; i < MAX_SPARKS; i++) live += s->pool[i].style != SPARK_NONE;
+    int odds = live > 300 ? 2 * BLOOD_RANDOM_NORMAL : BLOOD_RANDOM_NORMAL;
+
+    for (int i = 0; i < MAX_PLAYERS; i++) {
+        const Soldier *soldier = &w->soldiers[i];
+        if (!soldier->active || soldier->dead || soldier->team == TEAM_SPECTATOR || soldier->health >= HURT_HEALTH) continue;
+        if (rand_n(s, odds) != 0) continue;
+        Pose pose = soldier_pose(ctx->anims, soldier, soldier->pos);
+        add(s, vec2_add(pose.p[5 - 1], vec2(2, 0)), soldier->vel, SPARK_BLOOD, 65.0f - (float)rand_n(s, 10));
+    }
+}
+
 void sparks_tick(Sparks *s, const Context *ctx, const World *w, const Events *events)
 {
     if (!s->loaded) return;
@@ -482,6 +501,7 @@ void sparks_tick(Sparks *s, const Context *ctx, const World *w, const Events *ev
     jets(s, ctx, w);
     reloads(s, ctx, w);
     corpses(s, ctx, w);
+    wounded(s, ctx, w);
 
     for (int i = 0; i < MAX_SPARKS; i++) {
         Spark *spark = &s->pool[i];

@@ -215,6 +215,7 @@ void wire_event(NetBuf *b, Event *e)
         net_range(b, &blast, 3); // 0 stopped, else an ExplosionKind + 1
         s->blast = (uint8_t)blast;
         break;
+        net_u8(b, &s->target); // 255: none told
     }
     default: b->bad = true; break; // a local event has no place on the wire
     }

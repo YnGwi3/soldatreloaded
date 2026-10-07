@@ -106,8 +106,8 @@ static Rgba victim_color(Team team)
 }
 
 // The kill console (NetworkClientSprite.pas's death): the killer with its tally over
-// its weapon's icon, the victim under; a suicide is the one line, in gold. And the big
-// words for me: whom I killed, who killed me.
+// its weapon's icon, the victim under; a suicide is the one line, in gold, without an
+// icon when nothing did it. And the big words for me: whom I killed, who killed me.
 static void kill(Feed *f, const Game *g, const char names[MAX_PLAYERS][HUD_NAME], const EventKill *k, int me)
 {
     char text[HUD_TEXT];
@@ -117,7 +117,7 @@ static void kill(Feed *f, const Game *g, const char names[MAX_PLAYERS][HUD_NAME]
         kill_line(f, text, killer_color(killer_team), k->weapon, true);
         kill_line(f, names[k->target], victim_color(victim_team), k->weapon, false);
     } else {
-        kill_line(f, text, (Rgba){0xD3, 0xB7, 0x27, 0xEB}, k->weapon, true);
+        kill_line(f, text, (Rgba){0xD3, 0xB7, 0x27, 0xEB}, k->weapon, k->weapon != WEAPON_NONE); // /kill: no icon
     }
     if (k->killer == me && k->target != me) { // my weapon's tally, and the shot's readout
         f->stats[k->weapon].kills++;
@@ -224,8 +224,8 @@ void feed_tick(Feed *f, Console *con, const Game *g, const char names[MAX_PLAYER
         // taker's team): a capture in the capturer's, a return in the returner's, which is
         // the flag's own. The original's other return message (ClientApplyFlagInfo) says
         // either flag in Alpha's red, a slip not kept: "Blue Flag returned!" is blue.
-        case EVENT_FLAG_GRAB: { // the enemy's flag taken: mine to me, theirs to the rest; no
-                                // line in the console, as the original (its SmallCapText is never drawn)
+        case EVENT_FLAG_GRAB: { // the enemy's flag taken: mine to me, theirs to the rest, and
+                                // who took it in the console (the original's SmallCapText)
             ThingStyle flag = e->flag_grab.flag;
             const Soldier *taker = &g->world.soldiers[e->flag_grab.player];
             Team team = taker->team == TEAM_ALPHA || taker->team == TEAM_BRAVO ? taker->team
@@ -233,6 +233,7 @@ void feed_tick(Feed *f, Console *con, const Game *g, const char names[MAX_PLAYER
             if (e->flag_grab.player == me) snprintf(text, sizeof text, "You got the %s Flag!", flag_name(flag));
             else snprintf(text, sizeof text, "%s Flag captured!", flag_name(flag));
             big_message(f, text, team_color(team), FEED_CAPTURE_MESSAGE_TICKS);
+            console_print_color(con, team_color(team), "%s captured the %s Flag\n", names[e->flag_grab.player], flag_name(flag));
             break;
         }
         case EVENT_FLAG_RETURN: { // by a player: said; by the clock: nothing, as the original

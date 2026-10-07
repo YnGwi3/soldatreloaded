@@ -111,6 +111,8 @@ static void hud_sprite_load(HudSprite *s, const Mod *mod, const ScaleData *scale
     s->height = (float)s->tex.height / scale;
 }
 
+#define KILLCONSOLE_LEFT_TEXT 45 // a kill line's start on the left, past the original's icons
+
 // The kill console's icon for each weapon: the original's GFX_INTERFACE_GUNS_ files.
 static const char *GUN_ICONS[WEAPON_COUNT] = {
     [WEAPON_NONE] = "guns/fist.png",       [WEAPON_EAGLE] = "guns/1.png",     [WEAPON_MP5] = "guns/2.png",
@@ -157,6 +159,11 @@ void interface_load(Interface *hud, const Mod *mod, const ScaleData *scales)
     for (int i = 0; i < WEAPON_COUNT; i++) {
         if (GUN_ICONS[i]) hud_sprite_load(&hud->guns[i], mod, scales, GUN_ICONS[i]);
     }
+    // the kill console's lines on the left begin past the widest icon, drawn at 0.8, so a
+    // mod's wide guns don't cover the names
+    float widest = 0;
+    for (int i = 0; i < WEAPON_COUNT; i++) widest = fmaxf(widest, hud->guns[i].width);
+    hud->kill_left_text = fmaxf(KILLCONSOLE_LEFT_TEXT, 5 + widest * 0.8f + 5);
 }
 
 void interface_unload(Interface *hud)
@@ -506,8 +513,7 @@ static void draw_ping_dot(const Interface *hud, const Frame *f, const HudData *d
 
 // Where the kill console's lines begin, by ui_killconsole_pos: at the top on the right
 // (the original's), lower on the right, or on the left under the chat, where the icon
-// comes first and the lines run from the left edge.
-#define KILLCONSOLE_LEFT_TEXT 45 // a line's start on the left, past the icon
+// comes first and the lines run past the widest icon.
 static float kill_console_top(const HudData *d) { return d->kill_position == 1 ? 210.0f : d->kill_position == 2 ? 110.0f : 60.0f; }
 static bool kill_console_left(const HudData *d) { return d->kill_position == 2; }
 
@@ -893,7 +899,7 @@ static void draw_console(const Frame *f, const HudData *d, bool dim)
 }
 
 // The kill console's lines, right-aligned (or from the left, ui_killconsole_pos), smaller when long.
-static void draw_kill_console(const Frame *f, const HudData *d, Rect viewport)
+static void draw_kill_console(const Interface *hud, const Frame *f, const HudData *d, Rect viewport)
 {
     int alpha = 245;
     if (viewport.width < 1024) {
@@ -911,7 +917,7 @@ static void draw_kill_console(const Frame *f, const HudData *d, Rect viewport)
             tiny = !tiny;
             text_style(tiny ? FONT_SMALLEST : FONT_WEAPONS_MENU);
         }
-        float x = kill_console_left(d) ? KILLCONSOLE_LEFT_TEXT : 595 * f->iscale_x - text_width(k->text);
+        float x = kill_console_left(d) ? hud->kill_left_text : 595 * f->iscale_x - text_width(k->text);
         float y = kill_console_top(d) + (float)i * (FONT_WEAPONMENUSIZE + 2) + dy;
         text_color(with_alpha(k->color, alpha));
         text_draw(k->text, x, y);
@@ -962,8 +968,8 @@ static void draw_chat_input(const Frame *f, const HudData *d)
     const char *prefix;
     Rgba color;
     switch (d->chat_type) {
-    case HUD_CHAT_PUBLIC: prefix = "Say:", color = COLOR_CHAT; break;
-    case HUD_CHAT_TEAM: prefix = "Team Say:", color = COLOR_TEAMCHAT; break;
+    case HUD_CHAT_PUBLIC: prefix = "Chat:", color = COLOR_CHAT; break;
+    case HUD_CHAT_TEAM: prefix = "Team Chat:", color = COLOR_TEAMCHAT; break;
     case HUD_CHAT_COMMAND: prefix = "Cmd: ", color = COLOR_ENTER; break;
     default: return;
     }
@@ -991,8 +997,8 @@ static void draw_chat_input(const Frame *f, const HudData *d)
     text_align(TEXT_TOP);
 }
 
-// What each player says, over their head, and the dots while they type: not over the dead
-// or a spectator, who have no head on the field to put it over.
+// What each player says, over their head, and the dots while they type: over a corpse's
+// head too, as the original's, but not over a spectator, who has no head on the field.
 static void draw_chat_texts(const Frame *f, const HudData *d, const RenderState *state)
 {
     text_style(FONT_SMALL);
@@ -1001,16 +1007,18 @@ static void draw_chat_texts(const Frame *f, const HudData *d, const RenderState 
         const HudPlayer *p = &d->players[i];
         const RenderSoldier *s = &state->soldiers[i];
         bool typing = p->typing && d->typing_style > 0;
-        if (!p->active || !s->active || p->dead || p->spectator || (!typing && p->chat_delay <= 0)) continue;
+        if (!p->active || !s->active || p->spectator || (!typing && p->chat_delay <= 0)) continue;
         Vec2 at = world_to_interface(f, s->pose.p[12 - 1]);
         float dy = -25;
-        if (typing) { // the dots stepping one to three, after "Typing" if asked (ui_typing)
+        if (typing) { // the dots stepping one to three, after "Typing" if asked (ui_typing), at ui_typing_size
             const char *full = d->typing_style == 2 ? "Typing..." : "...";
             char str[16];
             snprintf(str, sizeof(str), "%.*s", (int)strlen(full) - 2 + d->tick / 30 % 3, full);
+            text_style_scaled(FONT_SMALL, d->typing_scale);
             text_color(COLOR_ABOVECHAT);
             text_draw(str, at.x - text_width(full) / 2, at.y + dy);
-            dy -= 15;
+            text_style(FONT_SMALL);
+            dy -= 15 * d->typing_scale;
         }
         if (p->chat_delay > 0 && strlen(p->chat) < MORECHATTEXT) {
             text_color(with_alpha(COLOR_ABOVECHAT, 9 * p->chat_delay));
@@ -1560,7 +1568,7 @@ void interface_draw(const Interface *hud, const HudData *d, const GameMenus *men
     draw_vote(hud, &f, d);
     if (d->radio_menu && !esc) draw_radio_menu(hud, d);
     draw_chat_input(&f, d);
-    draw_kill_console(&f, d, viewport);
+    draw_kill_console(hud, &f, d, viewport);
 
     if (me->active) {
         draw_chat_texts(&f, d, state);

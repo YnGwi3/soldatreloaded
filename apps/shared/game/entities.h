@@ -515,10 +515,11 @@ typedef struct EventAntic { uint8_t player; AnticKind kind; Vec2 pos, vel; uint8
 // leaves the machine that made it.
 typedef struct EventRopeCut { uint8_t player; Vec2 pos; } EventRopeCut;
 // The server's word of where a shot of `owner`'s, numbered `shot`, ended: in a blast of
-// kind `blast` - 1 (an ExplosionKind), or with 0 stopped in a body. A client's own flight
-// of it may have gone elsewhere (a body was elsewhere here, a corpse was rolled over), so
-// it is put where the server's ended and ended there the same way (bullets_update).
-typedef struct EventShotEnd { uint8_t owner; uint32_t shot; WeaponId weapon; Vec2 pos; uint8_t blast; } EventShotEnd;
+// kind `blast` - 1 (an ExplosionKind), or with 0 stopped in a body: `target`'s, or 255
+// for none told. A client's own flight of it may have gone elsewhere (a body was
+// elsewhere here, a corpse was rolled over), so it is put where the server's ended and
+// ended there the same way (bullets_update).
+typedef struct EventShotEnd { uint8_t owner; uint32_t shot; WeaponId weapon; Vec2 pos; uint8_t blast, target; } EventShotEnd;
 typedef struct EventEchoTest { int n; } EventEchoTest; // the tests', to watch the passes' mail
 
 typedef enum EventType {

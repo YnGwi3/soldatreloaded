@@ -238,6 +238,24 @@ static void whom_text(uint32_t host, const char *hwid, char *out, size_t size)
     snprintf(out, size, "%s %s", ip, hwid[0] ? hwid : "-");
 }
 
+// `name` as `slot` may hold it: as said, unless another player or bot holds it already,
+// then with the first "(j)" nobody holds, the name cut to make room for it
+// (NetworkServerConnection.pas ServerHandlePlayerInfo: LeftStr(name, 22 - Length(j)) of
+// the original's 24 letters; a name here holds one fewer).
+static void unique_name(const Connections *c, int slot, const char *name, char out[NET_NAME_SIZE])
+{
+    snprintf(out, NET_NAME_SIZE, "%s", name);
+    for (int j = 1;; j++) {
+        bool taken = false;
+        for (int i = 0; i < MAX_PLAYERS && !taken; i++)
+            taken = i != slot && (c->items[i].joined || c->items[i].bot) && strcmp(c->items[i].name, out) == 0;
+        if (!taken) return;
+        char suffix[16];
+        int digits = snprintf(suffix, sizeof suffix, "(%d)", j) - 2;
+        snprintf(out, NET_NAME_SIZE, "%.*s%s", NET_NAME_SIZE - 3 - digits, name, suffix);
+    }
+}
+
 static void hello(Connections *c, Game *g, ENetPeer *peer, const NetEvent *e)
 {
     NetBuf b = netbuf_reader(e->data, e->size);
@@ -279,7 +297,7 @@ static void hello(Connections *c, Game *g, ENetPeer *peer, const NetEvent *e)
     *conn = (Connection){.peer = peer, .joined = true, .admin = lists_admin(&c->lists, peer->address.host),
                          .muted = lists_muted(&c->lists, peer->address.host, hwid)};
     snprintf(conn->hwid, sizeof conn->hwid, "%s", hwid);
-    snprintf(conn->name, sizeof conn->name, "%s", m.name[0] ? m.name : "Player");
+    unique_name(c, slot, m.name[0] ? m.name : "Player", conn->name);
     peer->data = conn;
     server_stream_init(&c->streams[slot], c->round);
     c->streams[slot].event_ack = wire_queue_present(&c->events); // what happened before it came is nobody's news
@@ -325,6 +343,22 @@ void connections_place(Connections *c, Game *g, int slot, Team team)
     } else {
         Vec2 at = spawn_point(g->ctx.map, team, &g->world.rng);
         soldier_spawn(&g->ctx, s, at, team, gear, primary, secondary);
+        // a respawn as soldier_respawn tells it, the original's Respawn ending its team
+        // change: the next tick's things pass gives a high spawn its parachute, and the
+        // wire takes it to the clients for the sound and the spark. A placing in the end's
+        // countdown is still told, but the frozen step lets the things pass's mail go.
+        game_hear(g, (Event){
+            .type = EVENT_RESPAWN,
+            .respawn = {
+                .target = (uint8_t)slot,
+                .life = (uint8_t)(s->life + 1), // as it is below
+                .team = team,
+                .gear = gear,
+                .primary = primary,
+                .secondary = secondary,
+                .pos = at,
+            },
+        });
     }
     s->life++;
     s->remote = !c->items[slot].bot; // a player's keys move it and it tells what it fires; a bot is played here
@@ -792,12 +826,13 @@ static void vote_command(Connections *c, Game *g, int slot, const char *text)
             if (i == 7 && s->kills > 0) s->kills--;
         }
     } else if (strcmp(word, "kill") == 0 || strcmp(word, "brutalkill") == 0) {
-        // the original's: the vest off, a wound that kills (that tears apart, brutal), a kill fewer
+        // the original's: the vest off, a wound that kills (that tears apart, brutal) by no
+        // weapon (ServerCommands.pas: HealthHit's What of -1), a kill fewer
         Soldier *s = &g->world.soldiers[slot];
         if (!s->active || s->dead) return;
         s->vest = 0.0f;
         float amount = word[0] == 'b' ? 3423.0f : 150.0f;
-        game_hear(g, (Event){.type = EVENT_HIT, .hit = {.shooter = (uint8_t)slot, .target = (uint8_t)slot, .weapon = s->weapon.id, .amount = amount, .pos = s->pos}});
+        game_hear(g, (Event){.type = EVENT_HIT, .hit = {.shooter = (uint8_t)slot, .target = (uint8_t)slot, .weapon = WEAPON_NONE, .amount = amount, .pos = s->pos}});
         if (s->kills > 0) s->kills--;
     } else {
         // a script's command, if it has one by that name
@@ -866,7 +901,7 @@ int connections_add_bot(Connections *c, Game *g, const char *name, PlayerLook lo
 
     Connection *conn = &c->items[slot];
     *conn = (Connection){.bot = true, .chose_team = true, .team = team};
-    snprintf(conn->name, sizeof conn->name, "%s", name && name[0] ? name : "Bot");
+    unique_name(c, slot, name && name[0] ? name : "Bot", conn->name);
     Soldier *s = &g->world.soldiers[slot];
     s->look = look;
     s->primary_choice = primary;

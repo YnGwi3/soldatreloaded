@@ -66,26 +66,37 @@ void bullet_end(Bullet *b, uint16_t index, Events *events, const Vec2 *impact)
     event_emit(events, (Event){.type = EVENT_BULLET_END, .bullet_end = e});
 }
 
-void shot_end_tell(const World *w, const Bullet *b, Vec2 pos, uint8_t blast, Events *events)
+void shot_end_tell(const World *w, const Bullet *b, Vec2 pos, uint8_t blast, uint8_t target, Events *events)
 {
     if (!w->authority) return;
     event_emit(events, (Event){.type = EVENT_SHOT_END,
-                               .shot_end = {.owner = b->owner, .shot = b->shot_id, .weapon = b->weapon, .pos = pos, .blast = blast}});
+                               .shot_end = {.owner = b->owner, .shot = b->shot_id, .weapon = b->weapon, .pos = pos, .blast = blast, .target = target}});
 }
 
 // The server's word of where a shot ended, on a client: its own flight of the shot, if
 // it is still flying, is put where the server's ended and ended the same way, so a
 // grenade that went off on someone there goes off on them here, whatever path it took
 // here (a body was elsewhere, a corpse was rolled over). One already ended here stays
-// ended: a second blast for it would be a blast twice.
+// ended: a second blast for it would be a blast twice. A body it stopped in that the
+// flight here never met is hit here all the same, for the hit's sound and blood (a
+// thrown knife's, which only a flight meeting a body makes).
 static void shot_end_heard(const Context *ctx, World *w, const EventShotEnd *end, Events *events)
 {
     for (int i = 0; i < MAX_BULLETS; i++) {
         Bullet *b = &w->bullets[i];
         if (!b->active || b->owner != end->owner || b->shot_id != end->shot || b->weapon != end->weapon) continue;
         b->pos = b->old_pos = end->pos;
-        if (end->blast) explode(ctx, w, b, (uint16_t)i, (ExplosionKind)(end->blast - 1), -1, -1, events);
-        else bullet_end(b, (uint16_t)i, events, &end->pos);
+        if (end->blast) {
+            explode(ctx, w, b, (uint16_t)i, (ExplosionKind)(end->blast - 1), -1, -1, events);
+            return;
+        }
+        if (end->target < MAX_PLAYERS && b->hit_body != end->target) {
+            const Soldier *owner = &w->soldiers[b->owner], *live = &w->soldiers[end->target];
+            bool friendly = !w->rules.friendly_fire && owner->team != TEAM_NONE && owner->team == live->team && end->target != b->owner;
+            event_emit(events, (Event){.type = EVENT_BLOOD,
+                                       .blood = {.shooter = b->owner, .target = end->target, .pos = end->pos, .vel = b->vel, .bloodless = friendly}});
+        }
+        bullet_end(b, (uint16_t)i, events, &end->pos);
         return;
     }
 }

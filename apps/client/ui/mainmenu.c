@@ -2233,6 +2233,7 @@ static void page_options(Ui *ui)
         static const char *const STYLE_NAMES[] = {"Off", "Dots", "Typing..."};
         cvar_select(ui, "Typing indicator", "ui_typing", STYLES, STYLE_NAMES, NULL, 3);
     }
+    slider(ui, "Typing indicator size", "ui_typing_size", 50, 200, 10, true, "%d%%");
     slider(ui, "Kill log length", "ui_killconsole_length", 0, 50, 2, true, "%d lines");
     {
         static const int PLACES[] = {0, 1, 2};

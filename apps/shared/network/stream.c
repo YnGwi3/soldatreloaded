@@ -427,7 +427,9 @@ static void frame_apply(ClientStream *c, Game *g, int me, int k)
 // Soldier `i` as its word in ring slot `k` has it, stepped on `steps` ticks on its last
 // keys to where the tick on show wants it. The correction goes to the picture, to be
 // shown over a little while; a placing, or a jump too far to be a correction, shows at
-// once.
+// once. A dead one takes the served half alone, as the original never corrects a
+// corpse: its body is the ragdoll here, begun from the served death_pos and death_vel,
+// and its place the ragdoll's head.
 static void soldier_apply(ClientStream *c, Game *g, int i, int k, int steps, Events *scratch)
 {
     World *w = &g->world;
@@ -436,8 +438,12 @@ static void soldier_apply(ClientStream *c, Game *g, int i, int k, int steps, Eve
     bool placed = heard->life != s->life;
     Vec2 before = s->pos;
     soldier_copy_served(s, heard);
-    soldier_copy_owned(g->ctx.anims, s, heard);
     s->remote = true;
+    if (heard->dead) {
+        c->blend[i] = c->blend_vel[i] = vec2(0, 0);
+        return;
+    }
+    soldier_copy_owned(g->ctx.anims, s, heard);
     if (steps > STREAM_STEPS_MAX) steps = STREAM_STEPS_MAX;
     if (g->match.state != MATCH_PLAYING) steps = 0; // the world stands, paused or between rounds: so does the word
     for (int n = 0; n < steps; n++) {

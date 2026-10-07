@@ -44,6 +44,7 @@ typedef struct Interface {
     HudSprite sight;      // the sniper line
     HudSprite deaddot, flag, bot, connection, mute; // the scoreboard's rows: dead, carrying, a bot, the line's quality, muted by me
     HudSprite guns[WEAPON_COUNT]; // the kill console's icons, by weapon
+    float kill_left_text; // a kill line's start with the console on the left, past the widest icon
 } Interface;
 
 // The images from <base>/interface-gfx, keyed on pure green as the original's are.

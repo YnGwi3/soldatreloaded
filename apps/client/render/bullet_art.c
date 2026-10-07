@@ -198,7 +198,9 @@ static void bullet_draw(const BulletArt *b, const Bullet *bullet, float alpha, R
 void bullets_draw(const BulletArt *b, const Bullet *bullets, float alpha, Rgba grenade_color, bool trails, double seconds)
 {
     if (!b->loaded) return;
-    // a shot run forward is drawn on while its trail lasts, gone or not (GameRendering.pas)
+    // a shot run forward is drawn on while its trail lasts, gone or not (GameRendering.pas);
+    // only a plain round has such a trail, so the rest go with the shot (no missile parked
+    // where a rocket burst at once)
     for (int i = 0; i < MAX_BULLETS; i++)
-        if (bullets[i].active || bullets[i].ping_add > 0) bullet_draw(b, &bullets[i], alpha, grenade_color, trails, seconds);
+        if (bullets[i].active || (bullets[i].ping_add > 0 && bullets[i].style == BULLET_PLAIN)) bullet_draw(b, &bullets[i], alpha, grenade_color, trails, seconds);
 }

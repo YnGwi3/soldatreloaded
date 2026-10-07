@@ -195,6 +195,7 @@ typedef struct HudData {
     bool player_names; // the original's PlayerNamesShow
     bool team_names;   // ui_teamnames: teammates' names by them always, not only off the screen
     int typing_style;  // ui_typing: 0 nothing over who is typing, 1 the original's dots, 2 "Typing..."
+    float typing_scale; // ui_typing_size: the indicator's size, 0.5 to 2
     int fps;
     double time; // seconds since the start, for what blinks and bobs
     int tick;    // the main tick counter, for what steps

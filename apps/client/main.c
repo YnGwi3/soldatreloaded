@@ -135,7 +135,7 @@ typedef struct App {
     Cvar *track_shot;     // cl_trackshot: the camera follows a scoped Barrett shot
     Cvar *forcebg, *forcebg_color1, *forcebg_color2; // the sky in colours of my own instead of the map's (r_forcebg)
     Cvar *minimap, *info, *player_names, *console_length;
-    Cvar *team_names, *typing_style; // ui_teamnames, ui_typing
+    Cvar *team_names, *typing_style, *typing_size; // ui_teamnames, ui_typing, ui_typing_size
     Cvar *legacy_flag_throw; // cl_legacy_flag_throw: w+s (jump+crouch together) throws the flag, as older versions did
     Cvar *kill_length, *kill_position; // ui_killconsole_length, ui_killconsole_pos
     Cvar *player_name;
@@ -224,7 +224,7 @@ typedef struct App {
     uint32_t death_menu_tick;
     bool was_watching;     // dead or a spectator as of the last tick, for the camera's first target
     int seen_life;         // my latest life, -1 before the first, which opens the weapons menu
-    bool team_asked;       // the team menu shown for this round's join
+    bool team_asked;       // the team menu shown since the join: a change of map doesn't ask again
     // Watching: the player the camera follows (-1 for me), or the free camera, moved by
     // the cursor's offset from the middle, as the original's spectator has it.
     int camera_follow;
@@ -232,6 +232,7 @@ typedef struct App {
     bool tracking;          // the camera rides my scoped Barrett shot (track_shot)
     uint32_t tracking_shot; // which shot: its number
     Buttons camera_keys; // last tick's, so a press switches once
+    int camera_grace;    // ticks before fire, jet or jump moves the camera: a second from my death, then between switches (the original's MenuTimer)
     bool limbo_lock;       // the weapons menu closed while dead stays closed (the original's LimboLock)
     uint32_t death_menu_life; // the life the death menu armed at: a predicted respawn undone by a rewind does not re-arm it
     double accumulator;
@@ -594,7 +595,7 @@ static void cmd_vote(Console *con, int argc, char **argv, void *user)
 
 // The prompt (ControlGame.pas StartChat, ClearChatText). Its text begins with the
 // mode's own character, a space for a line said and a slash for a command, which the
-// drawing shows after "Say:" or "Cmd: " and the sending drops; deleting it closes the
+// drawing shows after "Chat:" or "Cmd: " and the sending drops; deleting it closes the
 // prompt. The keys are the prompt's until Enter sends the line or Escape drops it.
 static void chat_open(App *app, HudChatType type)
 {
@@ -1066,6 +1067,7 @@ static void cmd_connect(Console *con, int argc, char **argv, void *user)
         return;
     }
     demo_stop_playback(app);
+    app->team_asked = false; // a new join is asked its team
     char address[128];
     snprintf(address, sizeof address, "%s", argv[1]);
     uint16_t port = NET_DEFAULT_PORT;
@@ -1124,6 +1126,7 @@ static void cmd_host(Console *con, int argc, char **argv, void *user)
         console_print_color(con, HUD_COLOR_WARNING, "could not host on port %d\n", app->hosting.port->integer);
         return;
     }
+    app->team_asked = false; // a new join is asked its team
     client_net_connect(&app->net, con, "127.0.0.1", app->hosted->host.settings.port, app->player_name->value, app->hosting.password->value);
 }
 
@@ -1293,6 +1296,7 @@ static bool console_open(App *app, int argc, char *argv[])
                                     "1: teammates' names by them always, not only at the screen's edge when out of view (with ui_playernames)");
     app->typing_style = cvar_register(con, "ui_typing", "1", CVAR_ARCHIVE,
                                       "over a player typing: 0 nothing, 1 the original's dots, 2 \"Typing...\"");
+    app->typing_size = cvar_register(con, "ui_typing_size", "100", CVAR_ARCHIVE, "the typing indicator's size, percent, 50 to 200");
     app->legacy_flag_throw = cvar_register(con, "cl_legacy_flag_throw", "0", CVAR_ARCHIVE,
                                            "1: jump and crouch held together (w+s) throw the flag, as older versions did");
     app->kill_length = cvar_register(con, "ui_killconsole_length", "15", CVAR_ARCHIVE,
@@ -1767,6 +1771,9 @@ static void tick(App *app)
         if (s->remote) cmds[i] = stream_command(s, client_stream_quiet(&app->net.stream, i));
     }
     Command input = input_command(&app->input, ++app->seq, app->legacy_flag_throw->integer != 0);
+    // with the weapons or the team menu open my soldier is given no buttons, only the aim
+    // (Control.pas): he stands still, so a pick still arms this life
+    if (app->menus.menus[MENU_LIMBO].active || app->menus.menus[MENU_TEAM].active) input.buttons = 0;
     cmds[app->me] = playing ? app->demo_tick.cmd : input;
     // scoped before the tick: the shot snaps the sniper view back within it
     const Soldier *shooter = &w->soldiers[app->me];
@@ -1774,7 +1781,10 @@ static void tick(App *app)
     game_tick(app->game, cmds);
     if (playing) demo_apply_self(app);
     track_shot(app, scoped);
-    if (app->game->match.state != MATCH_PAUSED && !app->seeking) { // paused, the sparks hang too; a seek makes none
+    // the round standing, paused or ended, the sparks hang and none are made, a held jet's
+    // flames among them, as the original's UpdateFrame while MapChangeCounter runs; a
+    // seek makes none
+    if (!app->game->world.rules.frozen && !app->seeking) {
         render_tick(&app->render, &app->game->ctx, &app->game->world, &app->game->events);
         // the map's weather over the view (WeatherEffects.pas), while r_weathereffects is
         // on; none is made as a round ends, as the original's UpdateFrame makes none then
@@ -1801,8 +1811,9 @@ static void tick(App *app)
 
     // The weapons menu (NetworkClientSprite.pas, NetworkUtils.pas): it opens at my
     // death, unless I closed it while dead (the lock), and at my first life, before I
-    // have picked anything. It stays through the spawn, to pick with, until I pick a
-    // primary or move; the weaponsmenu key will not bring it back while I live. A game
+    // have picked anything. It stays through the spawn, to pick with, holding my soldier
+    // still, until I pick a primary or put it away; the weaponsmenu key will not bring it
+    // back while I live. A game
     // with teams asks the team first: the server keeps me watching until I say.
     const Soldier *me = &w->soldiers[app->me];
     bool spectator = me->active && me->team == TEAM_SPECTATOR;
@@ -1823,8 +1834,6 @@ static void tick(App *app)
             menus_show(&app->menus, MENU_LIMBO, true, hud_mode(app), 1);
             app->death_menu_pending = false;
         }
-        const Buttons moving = BUTTON_LEFT | BUTTON_RIGHT | BUTTON_JUMP | BUTTON_CROUCH | BUTTON_PRONE | BUTTON_JET | BUTTON_FIRE | BUTTON_THROW;
-        if (limbo && !dead && (cmds[app->me].buttons & moving)) menus_show(&app->menus, MENU_LIMBO, false, hud_mode(app), 1);
         if (spectator && team_game(app) && !app->team_asked && !esc) {
             menus_show(&app->menus, MENU_TEAM, true, hud_mode(app), 1);
             app->team_asked = true;
@@ -1834,11 +1843,11 @@ static void tick(App *app)
 
     // Watching (LocalInput.pas, "change camera when dead"): as I die the camera stays on
     // my body, as the original's CameraFollowSprite stays on mine; joining as a spectator,
-    // with no body, it goes to the first player up. Then, with no weapons menu open, fire
-    // follows the next player and jet the one before, among those alive I may watch (my
-    // team's in a team game); jump, or the freecam command, is the free camera, which the
-    // cursor pushes; and fire with nobody to follow is that too. Alive, the camera is
-    // mine again.
+    // with no body, it goes to the first player up. Then, a second after my death and with
+    // no weapons menu open, fire held follows the next player and jet the one before, among
+    // those alive I may watch (my team's in a team game), ten ticks between switches while
+    // it is held; jump, or the freecam command, is the free camera, which the cursor
+    // pushes; and fire with nobody to follow is that too. Alive, the camera is mine again.
     // A demo playing is watched from outside, by my own keys and at any time: fire and jet
     // go round the players and its recorder, jump is the free camera.
     Buttons keys = playing ? input.buttons : cmds[app->me].buttons;
@@ -1857,10 +1866,14 @@ static void tick(App *app)
         if (!app->was_watching) {
             app->camera_follow = -1;
             app->free_camera = false;
+            app->camera_grace = spectator ? 0 : TICK_RATE; // the fire I died holding moves nothing
             if (spectator && !camera_next(app, false)) camera_free(app);
-        } else if (!limbo) {
-            if (pressed & BUTTON_JUMP) camera_free(app);
-            else if ((pressed & (BUTTON_FIRE | BUTTON_JET)) && !camera_next(app, (pressed & BUTTON_JET) != 0)) camera_free(app);
+        } else if (app->camera_grace > 0) {
+            app->camera_grace--;
+        } else if (!limbo && (keys & (BUTTON_JUMP | BUTTON_FIRE | BUTTON_JET))) {
+            if (keys & BUTTON_JUMP) camera_free(app);
+            else if (!camera_next(app, (keys & BUTTON_JET) != 0)) camera_free(app);
+            app->camera_grace = 10;
         }
     } else {
         app->camera_follow = -1;
@@ -2184,6 +2197,7 @@ static void hud_data_build(App *app)
     d->player_names = app->player_names->integer != 0;
     d->team_names = app->team_names->integer != 0;
     d->typing_style = clampi(app->typing_style->integer, 0, 2);
+    d->typing_scale = clampi(app->typing_size->integer, 50, 200) / 100.0f;
     d->kill_position = clampi(app->kill_position->integer, 0, 2);
 
     // the radio menu's columns: the calls, and the places of the call chosen
@@ -2376,9 +2390,9 @@ static bool world_reload(App *app, const char *map)
     app->death_menu_life = 0; // a new world's lives start over; an old life can't match
     app->was_watching = false;
     app->seen_life = -1;
-    app->team_asked = false;
     app->camera_follow = -1;
     app->free_camera = false;
+    app->camera_grace = 0;
     // the scoreboard the round's end put up, and the stats, go with the old round (the
     // original's map change: FragsMenuShow and StatsMenuShow off)
     app->hud_data.frags_menu = false;
@@ -2625,6 +2639,9 @@ int main(int argc, char *argv[])
             if (online) client_stream_smooth(&app.net.stream, (float)since_frame, app.smooth->number / 1000.0f);
             build_render_state(&app.frame, &app.game->ctx, &app.previous, &app.latest, alpha, app.me,
                                team_game(&app), online ? app.net.stream.blend : NULL);
+            // the round standing, no jets burn: the buttons stay held through it, for play to go on as it was
+            if (app.game->world.rules.frozen)
+                for (int i = 0; i < MAX_PLAYERS; i++) app.frame.soldiers[i].jetting = false;
             Vec2 target = app.frame.focus;
             if (app.camera_follow >= 0 && app.frame.soldiers[app.camera_follow].active) target = app.frame.soldiers[app.camera_follow].pos;
             const RenderSoldier *watched = &app.frame.soldiers[app.camera_follow >= 0 ? app.camera_follow : app.me];
