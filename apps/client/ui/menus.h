@@ -75,6 +75,8 @@ void menus_init(GameMenus *m, float game_width, const Weapons *weapons);
 void menus_show(GameMenus *m, MenuId id, bool show, HudGameMode mode, int player_count);
 void menus_hide_all(GameMenus *m);
 bool menus_any_active(const GameMenus *m);
+// The weapons menu open and no other: the radio may share the digits with it then.
+bool menus_only_limbo(const GameMenus *m);
 
 // The cursor, in the interface's units, over the buttons. The menus keep it: a menu
 // shown, or a click, goes by where it is now, not by where it was when it last moved.

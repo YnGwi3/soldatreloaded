@@ -98,6 +98,14 @@ bool menus_any_active(const GameMenus *m)
     return false;
 }
 
+bool menus_only_limbo(const GameMenus *m)
+{
+    for (int i = 0; i < MENU_COUNT; i++) {
+        if (m->menus[i].active != (i == MENU_LIMBO)) return false;
+    }
+    return true;
+}
+
 void menus_show(GameMenus *m, MenuId id, bool show, HudGameMode mode, int player_count)
 {
     GameMenu *menu = &m->menus[id];

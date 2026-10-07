@@ -107,7 +107,7 @@ static const char *const PAGE_LINES[MAIN_PAGE_COUNT] = {
     "Games recorded here, to watch again.",
     "Your name, and how your soldier looks and what it carries.",
     "The keys. Click a binding, then press the new key; Escape cancels.",
-    "What a key says: a message to everyone or the team, or your own words as a radio call.",
+    "What a key says: a message to everyone or the team, or a radio call, in its own words or yours.",
     "Sound, the mouse, the interface and the connection.",
     "The window, and what is drawn of the world.",
 };
@@ -2008,6 +2008,8 @@ static void page_controls(Ui *ui)
     ui->y = maxf(ends[0], ends[1]);
     gap(ui, 6);
     toggle(ui, "Legacy flag throw", "cl_legacy_flag_throw");
+    toggle(ui, "Prioritize weapons menu over radio", "radio_weapons_first");
+    toggle(ui, "Auto close radio when weapons menu opens", "radio_autoclose");
 }
 
 // --- the taunts ---------------------------------------------------------------------
@@ -2032,9 +2034,22 @@ static void taunt_load(MainMenu *m, const Console *con, int slot)
     }
 }
 
+// A radio call's own words, call and place, from the radio_* cvars as the radio menu
+// says them: "Enemy flagger middle!".
+static void radio_words(const Console *con, int radio, char *out, size_t size)
+{
+    int call = (radio - 1) / 3 + 1, place = (radio - 1) % 3 + 1;
+    char name[CONSOLE_NAME_SIZE];
+    snprintf(name, sizeof name, "radio_%d", call);
+    const Cvar *c = cvar_find(con, name);
+    snprintf(name, sizeof name, "radio_%d_%d", call, place);
+    const Cvar *p = cvar_find(con, name);
+    snprintf(out, size, "%s %s", c ? c->value : "?", p ? p->value : "?");
+}
+
 // A taunt as its list row reads: the combo, as Alt+Q, what the text is — a radio
-// call, or said to everyone or the team — and the text. A click, or Enter, loads it
-// into the editor.
+// call, or said to everyone or the team — and the text, or a call's own words when
+// it has none. A click, or Enter, loads it into the editor.
 static void taunt_row(Ui *ui, const Console *con, int slot, const Taunt *t)
 {
     MainMenu *m = ui->m;
@@ -2052,17 +2067,19 @@ static void taunt_row(Ui *ui, const Console *con, int slot, const Taunt *t)
     float ww = minf(width_of(F_BODY, what), 110);
     text_fit(F_BODY, what, cx, cy, ww, t->radio ? ACCENT : MUTED);
     cx += ww + 12;
-    text_fit(F_BODY, t->text, cx, cy, r.w - 10 - cx + r.x, MUTED);
+    char words[CONSOLE_VALUE_SIZE];
+    if (t->radio && !t->text[0]) radio_words(con, t->radio, words, sizeof words);
+    text_fit(F_BODY, t->radio && !t->text[0] ? words : t->text, cx, cy, r.w - 10 - cx + r.x, MUTED);
 }
 
 // The loaded taunt written back: the message as its bind (taunt_compose), the slot
-// unbound when it is empty; the game saves it with the rest as it closes. The
-// Update button and Enter in the message both run this.
+// unbound when it has neither a message nor a radio call; the game saves it with the
+// rest as it closes. The Update button and Enter in the message both run this.
 static void taunt_update(MainMenu *m, Console *con)
 {
     if (m->taunt_slot < 0) return;
     char text[CONSOLE_VALUE_SIZE];
-    if (m->taunt_text[0]) {
+    if (m->taunt_text[0] || m->taunt_radio) {
         taunt_compose(text, sizeof text, m->taunt_mode, m->taunt_text, m->taunt_radio);
         taunt_set(con, m->taunt_slot, m->taunt_mod, text);
     } else {
@@ -2111,28 +2128,7 @@ static void page_taunts(Ui *ui)
     ui->x = two ? x + col_w + 20 : x;
     ui->y = two ? top_y : ends[0];
     section(ui, "EDIT");
-    { // the message, typed; what makes it a console line (quotes, semicolons) is left out
-        Row r = row(ui, ROW_H, true);
-        field_box(ui, r.id, r.focused, r.x + 10, ctrl_y(&r), r.w - 20, "#taunt", CONSOLE_VALUE_SIZE - 1, "What the key says",
-                  false);
-    }
-    if (m->taunt_radio) {
-        // the call says the message to the team itself, so there is nothing to pick here
-        Row r = row(ui, ROW_H, false);
-        if (r.shown)
-            text_fit(F_BODY, "The call says the message to the team, with its sound.", r.x + 10, r.y + r.h / 2, r.w - 20, MUTED);
-    } else { // the two modes, one of them always on
-        static const char *const MODE_NAMES[] = {"Chat", "Team chat"};
-        Row r = row(ui, ROW_H, false);
-        float cx = r.x;
-        for (int mode = 0; mode < 2; mode++) {
-            float cw = width_of(F_BODY, MODE_NAMES[mode]) + 30;
-            if (chip(ui, cx, r.y + (r.h - CTRL_H) / 2, MODE_NAMES[mode], (int)m->taunt_mode == mode))
-                m->taunt_mode = (TauntMode)mode;
-            cx += cw + 8;
-        }
-    }
-    { // the radio call the key sends, named from the radio_* cvars as the menu reads them
+    { // the radio call the key sends, first, named from the radio_* cvars as the menu reads them
         char labels[10][40];
         const char *names[10];
         names[0] = "None";
@@ -2149,6 +2145,28 @@ static void page_taunts(Ui *ui)
         }
         int picked = select_box(ui, "Radio", names, NULL, 10, m->taunt_radio, NULL);
         if (picked >= 0) m->taunt_radio = picked;
+    }
+    { // the message, typed; what makes it a console line (quotes, semicolons) is left out
+        Row r = row(ui, ROW_H, true);
+        field_box(ui, r.id, r.focused, r.x + 10, ctrl_y(&r), r.w - 20, "#taunt", CONSOLE_VALUE_SIZE - 1,
+                  m->taunt_radio ? "The call's own words" : "What the key says", false);
+    }
+    if (m->taunt_radio) {
+        // the call says it to the team itself, so there is nothing to pick here
+        Row r = row(ui, ROW_H, false);
+        if (r.shown)
+            text_fit(F_BODY, "Leave the message empty for the call's own words, or type one to say it as the call.", r.x + 10,
+                     r.y + r.h / 2, r.w - 20, MUTED);
+    } else { // the two modes, one of them always on
+        static const char *const MODE_NAMES[] = {"Chat", "Team chat"};
+        Row r = row(ui, ROW_H, false);
+        float cx = r.x;
+        for (int mode = 0; mode < 2; mode++) {
+            float cw = width_of(F_BODY, MODE_NAMES[mode]) + 30;
+            if (chip(ui, cx, r.y + (r.h - CTRL_H) / 2, MODE_NAMES[mode], (int)m->taunt_mode == mode))
+                m->taunt_mode = (TauntMode)mode;
+            cx += cw + 8;
+        }
     }
     {
         static const char *const MOD_NAMES[] = {"Alt", "Ctrl", "Shift"};

@@ -109,9 +109,11 @@ void taunt_compose(char *out, size_t size, TauntMode mode, const char *text, int
 
     if (radio >= 1 && radio <= 9) {
         // The message as the call: radio <call> <place> <words>, said to the team
-        // with the call's sound — one message, not the two the old suffix sent.
+        // with the call's sound — one message, not the two the old suffix sent. With
+        // no words, the call says its own, as the radio menu's would.
         int call = (radio - 1) / 3 + 1, place = (radio - 1) % 3 + 1;
-        snprintf(out, size, "radio %d %d %s", call, place, clean);
+        if (clean[0]) snprintf(out, size, "radio %d %d %s", call, place, clean);
+        else snprintf(out, size, "radio %d %d", call, place);
     } else if (mode == TAUNT_TEAM) {
         snprintf(out, size, "say_team %s", clean);
     } else {

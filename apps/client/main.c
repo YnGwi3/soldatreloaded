@@ -137,6 +137,8 @@ typedef struct App {
     Cvar *minimap, *info, *player_names, *console_length;
     Cvar *team_names, *typing_style, *typing_size; // ui_teamnames, ui_typing, ui_typing_size
     Cvar *legacy_flag_throw; // cl_legacy_flag_throw: w+s (jump+crouch together) throws the flag, as older versions did
+    Cvar *radio_weapons_first; // the weapons menu and the radio both open, the digits are the menu's
+    Cvar *radio_autoclose;     // the weapons menu shown shuts the radio
     Cvar *kill_length, *kill_position; // ui_killconsole_length, ui_killconsole_pos
     Cvar *player_name;
     Cvar *grenade_color;
@@ -1209,6 +1211,15 @@ static void cmd_freecam(Console *con, int argc, char **argv, void *user);
 
 static HudGameMode hud_mode(const App *app);
 
+// The weapons menu just shown, if it is: with radio_autoclose, the radio shuts for it.
+// The radio never shuts the weapons menu.
+static void radio_yield(App *app)
+{
+    if (!app->radio_autoclose->integer || !app->menus.menus[MENU_LIMBO].active) return;
+    app->hud_data.radio_menu = false;
+    app->hud_data.radio_state = 0;
+}
+
 // escmenu / weaponsmenu / teammenu / fragsmenu / statsmenu: each toggles its menu. The
 // scoreboard and the stats sit in the same place, so one closes the other, and neither
 // opens over the escape menu.
@@ -1226,6 +1237,7 @@ static void cmd_menu(Console *con, int argc, char **argv, void *user)
             menus_show(m, MENU_MAP, false, hud_mode(app), 1);
         } else {
             menus_show(m, MENU_ESC, !m->menus[MENU_ESC].active, hud_mode(app), 1);
+            radio_yield(app); // closing, it brings the weapons menu back
         }
     }
     else if (strcmp(name, "weaponsmenu") == 0) {
@@ -1238,6 +1250,7 @@ static void cmd_menu(Console *con, int argc, char **argv, void *user)
         if (me->dead) {
             menus_show(m, MENU_LIMBO, !m->menus[MENU_LIMBO].active, hud_mode(app), 1);
             app->limbo_lock = !m->menus[MENU_LIMBO].active;
+            radio_yield(app);
         } else {
             bool armed = me->weapon.id != WEAPON_NONE && me->secondary.id != WEAPON_NONE;
             if (m->menus[MENU_LIMBO].active && !armed) return;
@@ -1299,6 +1312,9 @@ static bool console_open(App *app, int argc, char *argv[])
     app->typing_size = cvar_register(con, "ui_typing_size", "100", CVAR_ARCHIVE, "the typing indicator's size, percent, 50 to 200");
     app->legacy_flag_throw = cvar_register(con, "cl_legacy_flag_throw", "0", CVAR_ARCHIVE,
                                            "1: jump and crouch held together (w+s) throw the flag, as older versions did");
+    app->radio_weapons_first = cvar_register(con, "radio_weapons_first", "1", CVAR_ARCHIVE,
+                                             "1: with the weapons menu and the radio both open, the number keys pick a weapon; 0: a radio call");
+    app->radio_autoclose = cvar_register(con, "radio_autoclose", "0", CVAR_ARCHIVE, "1: opening the weapons menu closes the radio");
     app->kill_length = cvar_register(con, "ui_killconsole_length", "15", CVAR_ARCHIVE,
                                      "the kill console's lines, two a kill, 0 to 50; 0 shows none");
     app->kill_position = cvar_register(con, "ui_killconsole_pos", "0", CVAR_ARCHIVE,
@@ -1832,6 +1848,7 @@ static void tick(App *app)
         bool death_menu_ready = app->death_menu_pending && w->tick - app->death_menu_tick >= TICK_RATE;
         if (((first_life && !dead) || death_menu_ready) && !app->limbo_lock && !limbo && !esc) {
             menus_show(&app->menus, MENU_LIMBO, true, hud_mode(app), 1);
+            radio_yield(app);
             app->death_menu_pending = false;
         }
         if (spectator && team_game(app) && !app->team_asked && !esc) {
@@ -2002,28 +2019,33 @@ static bool menu_event(App *app, const SDL_Event *e)
     int digit = e->key.keysym.scancode == SDL_SCANCODE_0 ? 0 : e->key.keysym.scancode - SDL_SCANCODE_1 + 1;
     // The radio menu (ControlGame.pas): Escape shuts it, and the escape menu waits for
     // the next press; 1 to 3 with no modifier choose, the rest of the keys going on to
-    // their binds. An open menu takes the digits first, as the original's do.
+    // their binds. An open menu takes the digits first, as the original's do, but for
+    // the weapons menu alone when radio_weapons_first gives them to the radio.
     bool plain = e->type == SDL_KEYDOWN && !(e->key.keysym.mod & (KMOD_CTRL | KMOD_SHIFT | KMOD_ALT | KMOD_GUI));
     if (app->hud_data.radio_menu && plain && !e->key.repeat && e->key.keysym.scancode == SDL_SCANCODE_ESCAPE) {
         app->hud_data.radio_menu = false;
         app->hud_data.radio_state = 0;
         return true;
     }
-    if (app->hud_data.radio_menu && !menus_any_active(m) && plain && digit_down && digit >= 1 && digit <= RADIO_CALLS) {
+    bool radio_first = !menus_any_active(m) || (!app->radio_weapons_first->integer && menus_only_limbo(m));
+    if (app->hud_data.radio_menu && radio_first && plain && digit_down && digit >= 1 && digit <= RADIO_CALLS) {
         radio_choose(app, digit);
         return true;
     }
     if (!menus_any_active(m)) return false;
-    if (digit_down) {
-        bool ctrl = (e->key.keysym.mod & KMOD_CTRL) != 0;
+    // a menu's digits are the plain ones and Ctrl's (the weapons menu's secondaries);
+    // Alt's and Shift's go on to their binds, the taunts on the number row, and pick nothing
+    bool ctrl = (e->key.keysym.mod & KMOD_CTRL) != 0;
+    bool limbo = m->menus[MENU_LIMBO].active;
+    if (digit_down && (plain || ctrl)) {
         apply_menu_action(app, ctrl ? menus_secondary_key(m, digit) : menus_number_key(m, digit));
-        return true;
-    }
-    if (e->type == SDL_MOUSEBUTTONDOWN && e->button.button == SDL_BUTTON_LEFT) {
+    } else if (e->type == SDL_MOUSEBUTTONDOWN && e->button.button == SDL_BUTTON_LEFT) {
         apply_menu_action(app, menus_click(m, app->hud_data.selected_weapon != WEAPON_NONE));
-        return true;
+    } else {
+        return false;
     }
-    return false;
+    if (!limbo) radio_yield(app); // the escape menu's kick or vote closed it, bringing the weapons menu back
+    return true;
 }
 
 // This frame's events: the window's, the mouse's motion, then the keys and buttons: an

@@ -4,7 +4,8 @@
 // they are pressed. `bind alt+q "say_team Cover me!"` is a taunt, and so is one
 // whose text runs as a radio call: `bind alt+1 "radio 1 2 Base!"` says "Base!" to
 // the team as the "Enemy flagger, middle!" call, with its sound — one message, the
-// call's own words replaced by the taunt's. The taunt editor (the main menu's
+// call's own words replaced by the taunt's; `bind alt+1 "radio 1 2"`, with no words,
+// is the call as the radio menu sends it. The taunt editor (the main menu's
 // Taunts page) reads and writes them here, so this is pure logic over the console,
 // with no SDL, for the tests (tests/taunts_test.c).
 //
@@ -30,7 +31,7 @@ typedef struct Taunt {
     int mod;                      // its modifier's place in TAUNT_MOD_KEYS
     char combo[CONSOLE_NAME_SIZE]; // the bind's key, "alt+q"
     TauntMode mode;               // who hears the message: everyone or the team; a radio call's goes to the team
-    char text[CONSOLE_VALUE_SIZE]; // the message, a radio call's own words
+    char text[CONSOLE_VALUE_SIZE]; // the message, said as the radio call; empty, the call says its own words
     int radio;                    // 0 none, else the call: (call - 1) * 3 + place, 1..9
 } Taunt;
 
@@ -44,7 +45,8 @@ void taunt_combo(char *out, size_t size, int slot, int mod);
 bool taunt_at(const Console *con, int slot, Taunt *out);
 
 // The bind's text for a taunt: `say` or `say_team` and the message, or
-// `radio <call> <place>` and the message, said as that call to the team — what
+// `radio <call> <place>` and the message, said as that call to the team (no message,
+// the call's own words) — what
 // console_key runs, and what the config saves back (config/client.cfg), round trip.
 void taunt_compose(char *out, size_t size, TauntMode mode, const char *text, int radio);
 
