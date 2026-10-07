@@ -86,6 +86,7 @@ void soldier_respawn(const Context *ctx, World *w, uint8_t index, Events *events
     // gets a parachute: the things pass does both on hearing of the respawn.
     Vec2 pos = spawn_point(ctx->map, s->team, &w->rng);
     soldier_spawn(ctx, s, pos, s->team, s->gear, s->primary_choice, s->secondary_choice);
+    memset(w->ragdolls[index].blast_owed, 0, sizeof w->ragdolls[index].blast_owed); // a throw the body never took
     s->life++;
     event_emit(events, (Event){
         .type = EVENT_RESPAWN,
@@ -118,20 +119,31 @@ void soldier_integrate(Soldier *s, float gravity)
     s->forces = (Vec2){0};
 }
 
+void soldier_move(World *w, Soldier *s)
+{
+    if (!s->active || s->team == TEAM_SPECTATOR || s->dead) return;
+    parachute_catch(w, s);
+    soldier_integrate(s, w->gravity);
+    s->vel = vec2_add(s->vel, s->next_push);
+    s->next_push = (Vec2){0};
+}
+
+void soldiers_move(World *w)
+{
+    for (int i = 0; i < MAX_PLAYERS; i++) soldier_move(w, &w->soldiers[i]);
+}
+
 void soldier_step(const Context *ctx, World *w, uint8_t index, Command cmd, Events *events, bool armed)
 {
     Soldier *s = &w->soldiers[index];
     if (!s->active || s->team == TEAM_SPECTATOR) return;
+    s->foreseen = 0.0f; // last tick's hits are ruled on
     if (s->dead) { // the bink goes with the life, so none is carried into the next (a client's placing doesn't wipe it)
         s->hit_spray = 0;
         memset(s->bink_owed, 0, sizeof s->bink_owed);
         return;
     }
 
-    parachute_catch(w, s);
-    soldier_integrate(s, w->gravity);
-    s->vel = vec2_add(s->vel, s->next_push);
-    s->next_push = (Vec2){0};
     if (s->hit_spray > 0) s->hit_spray--;
 
     s->cmd_seq = cmd.seq;

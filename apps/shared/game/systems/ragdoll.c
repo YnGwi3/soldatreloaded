@@ -13,6 +13,8 @@
 // living skeleton; here the pose before is the pose at death stepped back by the
 // soldier's velocity, as the skeleton's state is not kept while it lives.
 
+#include <string.h>
+
 #include "game/systems/systems.h"
 
 #define RAGDOLL_HEAD 11 // skeleton point 12: where the dead soldier is
@@ -37,12 +39,14 @@ static void ragdoll_start(const Context *ctx, World *w, uint8_t index)
 {
     const Soldier *s = &w->soldiers[index];
     Ragdoll *r = &w->ragdolls[index];
+    Vec2 owed[RAGDOLL_POINTS];
+    memcpy(owed, r->blast_owed, sizeof owed); // a blast's throw in the tick of the death
     *r = (Ragdoll){.active = true};
     Pose now = soldier_pose(ctx->anims, s, s->death_pos);
     Pose before = soldier_pose(ctx->anims, s, vec2_sub(s->death_pos, s->death_vel));
     for (int i = 0; i < POSE_POINTS; i++) {
         r->pos[i] = now.p[i];
-        r->old_pos[i] = before.p[i];
+        r->old_pos[i] = vec2_add(before.p[i], owed[i]);
     }
     // the extra points hang off the neck and the head
     r->pos[20] = r->pos[21] = r->old_pos[20] = r->old_pos[21] = now.p[8];
@@ -182,6 +186,7 @@ void ragdolls_update(const Context *ctx, World *w, Events *events)
         Ragdoll *r = &w->ragdolls[i];
         if (!s->active || !s->dead || s->team == TEAM_SPECTATOR) {
             r->active = false;
+            if (!s->active) memset(r->blast_owed, 0, sizeof r->blast_owed);
             continue;
         }
         if (!r->active) ragdoll_start(ctx, w, (uint8_t)i);

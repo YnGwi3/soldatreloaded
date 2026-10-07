@@ -604,7 +604,9 @@ static void things_on_respawn(const Context *ctx, World *w, uint8_t soldier)
     parachute_deploy(ctx, w, soldier);
 }
 
-// The things' counters on the soldiers: a flag just thrown, a medikit just taken.
+// The things' counters on the soldiers: a flag just thrown, a medikit just taken. After
+// the pass's mail, as the original counts a throw's cooldown down in the same Update
+// that set it.
 static void things_cooldowns(World *w)
 {
     for (int i = 0; i < MAX_PLAYERS; i++) {
@@ -617,7 +619,6 @@ static void things_cooldowns(World *w)
 
 void things_update(const Context *ctx, World *w, const Events *last, Events *events)
 {
-    things_cooldowns(w);
     EventCursor pending = events_pending(last, events, PASS_THINGS);
     for (const Event *e = events_next(&pending); e; e = events_next(&pending)) {
         switch (e->type) {
@@ -630,6 +631,7 @@ void things_update(const Context *ctx, World *w, const Events *last, Events *eve
         default: break;
         }
     }
+    things_cooldowns(w);
     stat_guns_cool(w);
 
     for (int i = 0; i < MAX_THINGS; i++) {

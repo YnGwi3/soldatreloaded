@@ -442,6 +442,7 @@ static void soldier_apply(ClientStream *c, Game *g, int i, int k, int steps, Eve
     if (g->match.state != MATCH_PLAYING) steps = 0; // the world stands, paused or between rounds: so does the word
     for (int n = 0; n < steps; n++) {
         events_clear(scratch); // what the steps would say is said by nobody
+        soldier_move(w, s);
         soldier_step(&g->ctx, w, (uint8_t)i, soldier_last_command(s, false), scratch, false);
     }
     Vec2 jump = vec2_sub(before, s->pos);

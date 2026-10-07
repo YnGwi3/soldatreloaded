@@ -354,9 +354,11 @@ static Candidates candidates(World *w, const Bullet *b)
 // The wound of a hit on `part` of `pose` at `point`. Its impact, the blow the gun of a
 // soldier it kills is thrown with, is the point away from the part, a little more, and
 // upside down (the original's Norm).
-static void wound(const Context *ctx, Events *events, const Bullet *b, int target, float amount, const Pose *pose, int part, Vec2 point,
-                  Vec2 push, bool spray)
+static void wound(const Context *ctx, World *w, Events *events, const Bullet *b, int target, float amount, const Pose *pose, int part,
+                  Vec2 point, Vec2 push, bool spray)
 {
+    Hit foreseen = {.shooter = b->owner, .target = (uint8_t)target, .amount = amount};
+    w->soldiers[target].foreseen += hit_damage(w, foreseen); // for the bullets and blasts still to come this tick
     Vec2 impact = vec2_scale(vec2_sub(point, pose->p[part]), 1.3f);
     impact.y = -impact.y;
     // the shot's flight, for the killer's readout (TSprite.Die): not a flame's
@@ -408,6 +410,9 @@ static bool body_collide(const Context *ctx, World *w, Bullet *b, uint16_t index
         // A corpse is met where its body lies this tick, not where it was `b->lag` ticks
         // ago: it moves slowly, and no history is kept of it.
         bool corpse = live->dead;
+        // Killed by a hit earlier this tick: a corpse to this one, as the original's Die
+        // in place leaves it, met in its live pose since its body has yet to fall.
+        bool doomed = !corpse && live->health - live->foreseen < 1.0f;
         Pose pose = corpse ? ragdoll_pose(&w->ragdolls[ti]) : soldier_pose(ctx->anims, target, target->pos);
 
         // The part is the one met nearest the start; the point is the last one met, in
@@ -435,7 +440,7 @@ static bool body_collide(const Context *ctx, World *w, Bullet *b, uint16_t index
         if (target->cease_fire_counter >= 0) continue; // spawn protection: it passes through
 
         Vec2 push = {0};
-        if (!corpse && b->style != BULLET_FRAG_GRENADE && b->style != BULLET_FLAME && b->style != BULLET_ARROW) {
+        if (!corpse && !doomed && b->style != BULLET_FRAG_GRENADE && b->style != BULLET_FLAME && b->style != BULLET_ARROW) {
             push = vec2_scale(b->vel, stats->push);
         }
         float modifier = hitbox_modifier(stats, part);
@@ -450,8 +455,8 @@ static bool body_collide(const Context *ctx, World *w, Bullet *b, uint16_t index
             blood(events, b, ti, point);
             float speed = vec2_length(b->vel);
             Hit h = {.shooter = b->owner, .target = (uint8_t)ti, .amount = speed * b->hit_multiply * modifier};
-            bool kills = !corpse && live->health - hit_damage(w, h) < 1.0f;
-            wound(ctx, events, b, ti, h.amount, &pose, part, point, push, true);
+            bool kills = !corpse && !doomed && live->health - live->foreseen - hit_damage(w, h) < 1.0f;
+            wound(ctx, w, events, b, ti, h.amount, &pose, part, point, push, true);
 
             // a punched enemy starts throwing its gun away
             if (b->style == BULLET_PUNCH && (live->team == TEAM_NONE || live->team != owner->team) &&
@@ -460,9 +465,10 @@ static bool body_collide(const Context *ctx, World *w, Bullet *b, uint16_t index
             }
             b->hit_body = (int8_t)ti;
 
-            // through a corpse barely slowed; through the dead it made or anyone when
-            // fast; through anyone when still near its full speed
-            if (corpse) {
+            // through a corpse, or a body killed this tick, barely slowed; through the
+            // dead it made or anyone when fast; through anyone when still near its full
+            // speed
+            if (corpse || doomed) {
                 b->vel = vec2_scale(b->vel, 0.9f);
                 continue;
             }
@@ -487,7 +493,7 @@ static bool body_collide(const Context *ctx, World *w, Bullet *b, uint16_t index
             b->forces.y -= bullet_gravity(w);
             bool friendly = !w->rules.friendly_fire && owner->team != TEAM_NONE && owner->team == live->team;
             if (!friendly && live->bonus != BONUS_FLAME_GOD) blood(events, b, ti, point);
-            wound(ctx, events, b, ti, vec2_length(b->vel) * b->hit_multiply * modifier, &pose, part, point, push, false);
+            wound(ctx, w, events, b, ti, vec2_length(b->vel) * b->hit_multiply * modifier, &pose, part, point, push, false);
             shot_end_tell(w, b, point, 0, events);
             bullet_end(b, index, events, &point);
             return true;
@@ -499,7 +505,7 @@ static bool body_collide(const Context *ctx, World *w, Bullet *b, uint16_t index
             explode(ctx, w, b, index, EXPLOSION_M79, ti, part, events);
             b->pos = point;
             bullet_end(b, index, events, NULL);
-            wound(ctx, events, b, ti, vec2_length(b->vel) * b->hit_multiply, &pose, part, point, push, false);
+            wound(ctx, w, events, b, ti, vec2_length(b->vel) * b->hit_multiply, &pose, part, point, push, false);
             return true;
         case BULLET_FLAME: {
             if (ti == b->owner) return true;
@@ -514,13 +520,13 @@ static bool body_collide(const Context *ctx, World *w, Bullet *b, uint16_t index
                     // a flame starts a step further out than it is aimed from
                     spawn_child(ctx, w, b, vec2_add(pose.p[part], away), away, WEAPON_FLAMER, 2.0f * b->hit_multiply / 3.0f, events);
                 }
-                if (live->health > -1.0f) wound(ctx, events, b, ti, b->hit_multiply, &pose, part, point, (Vec2){0}, false);
+                if (live->health > -1.0f) wound(ctx, w, events, b, ti, b->hit_multiply, &pose, part, point, (Vec2){0}, false);
             }
             return true;
         }
         case BULLET_CLUSTER:
             explode(ctx, w, b, index, EXPLOSION_CLUSTER, ti, part, events);
-            if (!vec2_is_zero(push)) wound(ctx, events, b, ti, 0.0f, &pose, part, point, push, false); // the shove of the hit itself
+            if (!vec2_is_zero(push)) wound(ctx, w, events, b, ti, 0.0f, &pose, part, point, push, false); // the shove of the hit itself
             bullet_end(b, index, events, NULL);
             return true;
         case BULLET_THROWN_KNIFE: {
@@ -530,7 +536,7 @@ static bool body_collide(const Context *ctx, World *w, Bullet *b, uint16_t index
             bool friendly = !w->rules.friendly_fire && owner->team != TEAM_NONE && owner->team == live->team && ti != b->owner;
             event_emit(events, (Event){.type = EVENT_BLOOD,
                                        .blood = {.shooter = b->owner, .target = (uint8_t)ti, .pos = point, .vel = b->vel, .bloodless = friendly}});
-            wound(ctx, events, b, ti, vec2_length(b->vel) * b->hit_multiply * 0.01f, &pose, part, point, push, false);
+            wound(ctx, w, events, b, ti, vec2_length(b->vel) * b->hit_multiply * 0.01f, &pose, part, point, push, false);
             if (corpse) { // it goes through a corpse rather than sticking in it
                 b->hit_body = (int8_t)ti;
                 return true;

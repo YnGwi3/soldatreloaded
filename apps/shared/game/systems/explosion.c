@@ -54,30 +54,29 @@ static void blast_soldier(const Context *ctx, World *w, const Bullet *b, int i, 
     else a.y *= 2.0f;
 
     float amount = s->cease_fire_counter < 0 ? (1.0f / (dist + 1.0f)) * stats->damage * modifier : 0.0f;
-    event_emit(events, (Event){
-        .type = EVENT_HIT,
-        .hit = {.shooter = b->owner, .target = (uint8_t)i, .weapon = b->weapon, .amount = amount, .part = 0,
-                .pos = pose.p[part], .push = vec2_scale(a, -1.0f), .impact = a, .spray = true},
-    });
+    Hit hit = {.shooter = b->owner, .target = (uint8_t)i, .weapon = b->weapon, .amount = amount, .part = 0,
+               .pos = pose.p[part], .push = vec2_scale(a, -1.0f), .impact = a, .spray = true};
+    w->soldiers[i].foreseen += hit_damage(w, hit); // for the bullets and blasts still to come this tick
+    event_emit(events, (Event){.type = EVENT_HIT, .hit = hit});
 }
 
-// The dead: every point in reach is thrown, and the body takes a wound by the last of
-// them, which is what tears it apart.
-static void blast_corpse(const Context *ctx, World *w, const Bullet *b, int i, ExplosionKind kind, Events *events)
+// The dead: every point of `points` in reach is thrown (its last place `thrown` pulled
+// back, which the Verlet step turns into a kick), and the body takes a wound by the last
+// of them, which is what tears it apart.
+static void blast_body(const Context *ctx, World *w, const Bullet *b, int i, ExplosionKind kind, const Vec2 *points, Vec2 *thrown,
+                       Events *events)
 {
-    Ragdoll *r = &w->ragdolls[i];
-    if (!r->active) return;
     const WeaponStats *stats = &ctx->weapons.info[kind == EXPLOSION_M79 ? WEAPON_M79 : WEAPON_FRAG].stats;
     float radius = kind == EXPLOSION_FRAG ? FRAG_EXPLOSION_RADIUS : kind == EXPLOSION_M79 ? M79_EXPLOSION_RADIUS : CLUSTER_EXPLOSION_RADIUS;
 
     bool reached = false;
     float last = 0.0f;
     for (int k = 0; k < CORPSE_BLAST_POINTS; k++) {
-        Vec2 a = vec2_sub(b->pos, r->pos[k]);
+        Vec2 a = vec2_sub(b->pos, points[k]);
         float dist2 = vec2_dot(a, a);
         if (dist2 >= radius * radius) continue;
         float dist = sqrtf(dist2);
-        r->old_pos[k] = vec2_add(r->old_pos[k], vec2_scale(a, (1.0f / (dist + 1.0f)) * EXPLOSION_DEADIMPACT_MULTIPLY));
+        thrown[k] = vec2_add(thrown[k], vec2_scale(a, (1.0f / (dist + 1.0f)) * EXPLOSION_DEADIMPACT_MULTIPLY));
         reached = true;
         last = dist;
     }
@@ -93,6 +92,24 @@ static void blast_corpse(const Context *ctx, World *w, const Bullet *b, int i, E
     });
 }
 
+// A corpse: its body as it lies.
+static void blast_corpse(const Context *ctx, World *w, const Bullet *b, int i, ExplosionKind kind, Events *events)
+{
+    Ragdoll *r = &w->ragdolls[i];
+    if (!r->active) return;
+    blast_body(ctx, w, b, i, kind, r->pos, r->old_pos, events);
+}
+
+// A soldier killed this tick, by this blast or before it, whose body has yet to fall:
+// its live pose, the throw kept for the body when it starts. The original's sprite is
+// DeadMeat at once, its skeleton there to throw.
+static void blast_doomed(const Context *ctx, World *w, const Bullet *b, int i, ExplosionKind kind, Events *events)
+{
+    const Soldier *s = &w->soldiers[i];
+    Pose pose = soldier_pose(ctx->anims, s, s->pos);
+    blast_body(ctx, w, b, i, kind, pose.p, w->ragdolls[i].blast_owed, events);
+}
+
 void explode(const Context *ctx, World *w, Bullet *b, uint16_t index, ExplosionKind kind, int hit_soldier, int hit_part, Events *events)
 {
     float radius = kind == EXPLOSION_FRAG ? FRAG_EXPLOSION_RADIUS : kind == EXPLOSION_M79 ? M79_EXPLOSION_RADIUS : CLUSTER_EXPLOSION_RADIUS;
@@ -105,8 +122,11 @@ void explode(const Context *ctx, World *w, Bullet *b, uint16_t index, ExplosionK
     for (int i = 0; i < MAX_PLAYERS; i++) {
         const Soldier *s = &w->soldiers[i];
         if (!s->active || s->team == TEAM_SPECTATOR) continue;
+        // the living are wounded and thrown; then the dead, those this blast or an
+        // earlier hit this tick killed among them, have their bodies thrown
+        if (!s->dead) blast_soldier(ctx, w, b, i, bullet_target(w, b, i), kind, hit_soldier, hit_part, events); // as the thrower saw it
         if (s->dead) blast_corpse(ctx, w, b, i, kind, events);
-        else blast_soldier(ctx, w, b, i, bullet_target(w, b, i), kind, hit_soldier, hit_part, events); // as the thrower saw it
+        else if (s->health - s->foreseen < 1.0f) blast_doomed(ctx, w, b, i, kind, events);
     }
 
     // the blast shoves the things it may: every point in range gets its previous

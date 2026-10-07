@@ -26,9 +26,14 @@ void thrown_knife_land(const Context *ctx, World *w, const EventKnifeLand *e)
     if (w->authority) thing_create(ctx, w, THING_WEAPON, e->pos, WEAPON_KNIFE, (uint8_t)(e->owner + 1), -1);
 }
 
-bool dropped_gun_wanted(const Thing *t, const Soldier *s)
+bool dropped_gun_wanted(const Thing *t, const World *w, uint8_t soldier, const Events *events)
 {
+    const Soldier *s = &w->soldiers[soldier];
     if (s->weapon.id != WEAPON_NONE || s->body.id == ANIM_CHANGE) return false;
+    for (int i = 0; i < events->count; i++) { // a gun taken this tick is in the hand already
+        const Event *e = &events->items[i];
+        if (e->type == EVENT_WEAPON_PICKUP && e->weapon_pickup.player == soldier) return false;
+    }
     if (t->weapon == WEAPON_BOW || t->weapon == WEAPON_BOW2) return t->timeout < FLAG_TIMEOUT - 100;
     return t->timeout < PICKUP_RESIST;
 }
@@ -36,8 +41,7 @@ bool dropped_gun_wanted(const Thing *t, const Soldier *s)
 void dropped_gun_take(const Context *ctx, World *w, int index, uint8_t soldier, Events *events)
 {
     Thing *t = &w->things[index];
-    Soldier *s = &w->soldiers[soldier];
-    if (!dropped_gun_wanted(t, s)) return;
+    if (!dropped_gun_wanted(t, w, soldier, events)) return;
 
     event_emit(events, (Event){
         .type = EVENT_WEAPON_PICKUP,

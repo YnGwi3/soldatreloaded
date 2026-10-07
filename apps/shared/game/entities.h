@@ -277,6 +277,10 @@ typedef struct Soldier {
     // refreshed every 10 ticks; 255 = not near any. Crouching by cover raises the gun.
     uint8_t collider_distance;
     uint16_t hit_spray; // bink: aim disturbance from being hit, decaying one per tick
+    // What this tick's hits so far would take off the health, cleared at the step: a
+    // death the bullets pass foresees before the wounds pass rules it. The original
+    // kills in place, so the next bullet or blast that tick finds a corpse.
+    float foreseen;
     // A hit's bink comes by two words on a client, the bullet flown here and the server's
     // damage, whichever first: per shooter, the words of one kind not yet matched by the
     // other (flown positive, told negative) and when the last came (hit_spray).
@@ -421,6 +425,9 @@ typedef struct Ragdoll {
     uint8_t hits;      // landings so far, which quiet the thud
     int32_t dead_time; // ticks since the body started, which dry the bleeding up
     bool on_ground;    // the last point checked touched the map: a parachute is let go of
+    // A blast's throw on a body killed the same tick, kept for the ragdoll it starts as
+    // (the original throws the skeleton of a sprite just made DeadMeat at once).
+    Vec2 blast_owed[RAGDOLL_POINTS];
 } Ragdoll;
 
 // ---------------------------------------------------------------------------------

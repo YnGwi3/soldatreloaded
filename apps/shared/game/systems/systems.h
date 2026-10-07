@@ -72,8 +72,15 @@ void soldier_arm(const Context *ctx, Soldier *s, WeaponId primary, WeaponId seco
 // Euler integration of the body particle, before the control step.
 void soldier_integrate(Soldier *s, float gravity);
 
-// One tick of one soldier: integrate, take the knockback, the controls through the
-// state machines, animate, collide with the map, the weapon timers, the jet fuel.
+// A living body moved: a parachute's catch, the integration, the knockback. Every
+// soldier's before any soldier's step: the original's frame integrates all its sprite
+// particles first (ServerLoop UpdateFrame), so a step finds every other soldier where
+// it is this tick, whichever comes first.
+void soldier_move(World *w, Soldier *s);
+void soldiers_move(World *w);
+
+// One tick of one soldier, its body moved already (soldier_move): the controls through
+// the state machines, animate, collide with the map, the weapon timers, the jet fuel.
 // `armed` is false where a soldier is moved without its player behind it, which leaves
 // its weapon alone.
 void soldier_step(const Context *ctx, World *w, uint8_t index, Command cmd, Events *events, bool armed);
@@ -429,8 +436,10 @@ void dropped_gun_drop(const Context *ctx, World *w, const EventWeaponDrop *e);
 // A thrown knife that stopped (EVENT_KNIFE_LAND) lies there as a knife to pick up.
 void thrown_knife_land(const Context *ctx, World *w, const EventKnifeLand *e);
 
-// Whether a soldier may take the gun, and the taking.
-bool dropped_gun_wanted(const Thing *t, const Soldier *s);
+// Whether `soldier` may take the gun: empty-handed, with none of this tick's pickups in
+// `events` already for it (the original hands a gun over at once, so a second lying
+// with it finds the hand full), and the taking.
+bool dropped_gun_wanted(const Thing *t, const World *w, uint8_t soldier, const Events *events);
 // The taking, in the things pass: the pickup told (EVENT_WEAPON_PICKUP), the gun gone.
 void dropped_gun_take(const Context *ctx, World *w, int index, uint8_t soldier, Events *events);
 // The gun into the hands, in the soldiers' receipts pass, from the pickup told.

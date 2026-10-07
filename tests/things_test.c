@@ -164,7 +164,8 @@ static void flag_thrown(void)
     CHECK(flag->holder == 0 && s->held == 0, "the throw key lets it go");
     CHECK(along > 3.0f && vec2_length(flew) < 8.0f, "flying along the aim at the throw's power (%.2f, %.2f)", flew.x, flew.y);
     CHECK(vec2_length(vec2_sub(flag->pos[0], held)) > 20.0f, "from a step ahead of the thrower");
-    CHECK(s->flag_grab_cooldown == 15, "who may not take it back for a quarter second (%d)", s->flag_grab_cooldown);
+    // the quarter second counts from the throw's own things pass, as the original's Update counts it
+    CHECK(s->flag_grab_cooldown == 14, "who may not take it back for a quarter second (%d)", s->flag_grab_cooldown);
     run(g, 5, press_nothing);
     CHECK(flag->holder == 0, "and doesn't");
     scene_free(g);

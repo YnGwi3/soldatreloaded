@@ -68,6 +68,7 @@ void world_step(const Context *ctx, World *w, const Command cmds[MAX_PLAYERS], c
         w->tick++;
         return;
     }
+    soldiers_move(w);
     for (int i = 0; i < MAX_PLAYERS; i++) {
         const Soldier *s = &w->soldiers[i];
         if (s->active) soldier_step(ctx, w, (uint8_t)i, cmds[i], events, !s->remote);
