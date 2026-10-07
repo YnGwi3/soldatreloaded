@@ -1,23 +1,23 @@
--- Soldat Reloaded: the client, the server, the simulation they share, the launcher that
--- keeps a player's copy up to date, and the tests.
+-- Soldat Reloaded: the game (which keeps a player's copy up to date as it starts, and hosts
+-- Local Play), the dedicated server, the simulation they share, and the tests.
 --
---   xmake                the client, the server and the launcher
---   xmake run client     in runtime/, where data/, mods/, config/ and scripts/ are
+--   xmake                the game and the server
+--   xmake run client     in assets/, where data/, mods/, config/ and scripts/ are
 --   xmake run server
 --   xmake test           the headless checks in tests/
 --   xmake dist           the packages, in build/release/: one for players, one for a server,
---                        the launcher's update, and the manifest it reads (launcher/update.h)
+--                        and the manifest the game's updater reads (launcher/update.h)
 --
 -- The game finds everything beside itself, in the directory it runs from: data/, what it
 -- plays by (maps, animations, skeletons, bots); mods/, what it looks and sounds like
--- (mods/default/ and a player's own beside it); config/ and scripts/. runtime/ holds them
--- as an install lays them out, so that is runtime/ under xmake run (set_rundir) and the
+-- (mods/default/ and a player's own beside it); config/ and scripts/. assets/ holds them
+-- as an install lays them out, so that is assets/ under xmake run (set_rundir) and the
 -- package's own directory once unpacked, and nothing is passed on the command line. What
 -- the game writes there as it plays (config/, demos/) and a player's mods are the
 -- player's, and not the project's.
 
 set_project("soldatreloaded")
-set_version("0.8.0")
+set_version("0.9.0")
 includes("@builtin/xpack")
 
 add_rules("mode.debug", "mode.release")
@@ -48,31 +48,31 @@ add_requires("libcurl", {configs = {shared = false, mbedtls = not is_plat("windo
 -- whole or by range, and the deflate inside a tar.gz, as releases before had them.
 add_requires("miniz")
 
--- runtime/scripts/main.lua as a C string, main_lua.h: a server unpacked from its own package
--- makes scripts/main.lua from it where it is missing (packages/server/main.c), so the file
+-- assets/scripts/main.lua as a C string, main_lua.h: a server unpacked from its own package
+-- makes scripts/main.lua from it where it is missing (apps/server/main.c), so the file
 -- the game's package ships is the one source of it. Written only when it changes.
 rule("main_lua")
     on_load(function (target)
-        local text = io.readfile(path.join(os.projectdir(), "runtime", "scripts", "main.lua")):gsub("\r", "")
+        local text = io.readfile(path.join(os.projectdir(), "assets", "scripts", "main.lua")):gsub("\r", "")
         local lines = {}
         for line in (text .. "\n"):gmatch("(.-)\n") do
             table.insert(lines, '    "' .. line:gsub("\\", "\\\\"):gsub('"', '\\"') .. '\\n"')
         end
         if lines[#lines] == '    "\\n"' then table.remove(lines) end -- the end of the file's last line
-        local header = "// Made by xmake.lua from runtime/scripts/main.lua.\nstatic const char MAIN_LUA[] =\n"
+        local header = "// Made by xmake.lua from assets/scripts/main.lua.\nstatic const char MAIN_LUA[] =\n"
                        .. table.concat(lines, "\n") .. ";\n"
         local out = path.join(target:autogendir(), "main_lua.h")
         if not os.isfile(out) or io.readfile(out) ~= header then io.writefile(out, header) end
         target:add("includedirs", target:autogendir())
     end)
 
--- The game's icon, runtime/data/icon.ico, built into an executable on Windows: the one
+-- The game's icon, assets/data/icon.ico, built into an executable on Windows: the one
 -- Explorer, the taskbar and the window show, as SDL takes a window's icon from the first
 -- in its executable. The resource script that names it is written here, at build time.
 rule("icon")
     on_load(function (target)
         if not target:is_plat("windows") then return end
-        local ico = path.join(os.projectdir(), "runtime", "data", "icon.ico"):gsub("\\", "/")
+        local ico = path.join(os.projectdir(), "assets", "data", "icon.ico"):gsub("\\", "/")
         local rc = path.join(target:autogendir(), "icon.rc")
         local text = ("1 ICON \"%s\"\n"):format(ico)
         -- written only when it changes: a new one relinks the executable, a new one each time
@@ -84,36 +84,44 @@ rule("icon")
 -- rendering, audio or networking dependencies.
 target("shared")
     set_kind("static")
-    add_files("packages/shared/**.c")
-    add_includedirs("packages/shared", {public = true})
+    add_files("apps/shared/**.c")
+    add_includedirs("apps/shared", {public = true})
     add_packages("enet", {public = true}) -- the transport (shared/network) is ENet's
+    add_packages("miniz", {public = true}) -- a packed map (.smap) is a zip (resources/mapfile.h)
     if not is_plat("windows") then
         add_syslinks("m", {public = true})
     end
 
--- The game client: SDL2 for the window and input, OpenGL 2.1 for the drawing, and
--- audio. The server's host is built in (server/host.c and what it stands on), for Local
--- Play: the client hosts a game and joins it over the loopback.
+-- The game, what a player starts: Soldat Reloaded.exe on Windows, soldatreloaded on
+-- Linux. SDL2 for the window and input, OpenGL 2.1 for the drawing, and audio. Its
+-- updater runs first (launcher/updater.h), so starting the game keeps it up to date. The
+-- server's hosting is built in (server/hosted.h), for Local Play: the game hosts a game
+-- and joins it over the loopback.
 --   xmake run client [+map <name>] [+<cvar> <value>] [+<command> <args>...]
 target("client")
     set_kind("binary")
+    set_basename(is_plat("windows") and "Soldat Reloaded" or "soldatreloaded")
     add_rules("icon")
     add_deps("shared")
-    -- the hosting settings, which Local Play sets for the server it starts (net/local_server.c)
-    add_files("packages/client/**.c", "packages/server/host_cvars.c")
-    -- the launcher's HTTPS, for the server browser's list from the lobby (client/net/browser.c)
-    add_files("packages/launcher/http.c", "packages/launcher/files.c", "packages/launcher/sha256.c")
-    add_includedirs("packages/client", "packages/server", "packages/launcher")
-    add_packages("libsdl2", "stb", "libcurl")
+    -- the server but its console and loop (server/hosted.h), for Local Play: a game hosted
+    -- here as a dedicated server hosts it, its script with it
+    add_files("apps/client/**.c", "apps/server/*.c|main.c|stdin_reader.c")
+    -- the updater, and its HTTPS for the server browser's list from the lobby too
+    add_files("apps/launcher/*.c")
+    add_includedirs("apps/client", "apps/server", "apps/launcher")
+    add_packages("libsdl2", "stb", "libcurl", "lua", "miniz")
+    add_defines('SOLDATRELOADED_RELEASES="https://github.com/soldatreloaded/soldatreloaded/releases"')
     if is_plat("windows") then
         add_syslinks("advapi32") -- the machine's ID, for its hardware ID (client/net/hwid.c)
     else
         add_syslinks("pthread") -- curl's resolver
     end
-    -- the escape menu shows the version xmake.lua sets
+    -- the version the escape menu and the updater show, and the platform whose manifest the
+    -- updater asks for (latest-windows-x64.txt)
     on_load(function (target)
         import("core.project.project")
         target:add("defines", 'SOLDATRELOADED_VERSION="' .. project.version() .. '"')
+        target:add("defines", 'SOLDATRELOADED_PLATFORM="' .. target:plat() .. "-" .. target:arch() .. '"')
     end)
     if is_plat("windows") then
         -- SDL2main provides main and WinMain; with neither in our objects the linker can't
@@ -125,7 +133,7 @@ target("client")
             add_ldflags("/SUBSYSTEM:WINDOWS")
         end
     end
-    set_rundir("$(projectdir)/runtime")
+    set_rundir("$(projectdir)/assets")
 
 -- The game server, headless: the same simulation with authority, ticked on its own
 -- clock. Nothing but the console and the world until the netcode is ported.
@@ -134,11 +142,11 @@ target("server")
     add_rules("main_lua")
     set_kind("binary")
     add_deps("shared")
-    add_files("packages/server/**.c")
+    add_files("apps/server/**.c")
     -- the launcher's HTTPS, for the lobby's heartbeat (server/lobby.c): it finds Linux's
     -- certificates for curl's mbedTLS
-    add_files("packages/launcher/http.c", "packages/launcher/files.c", "packages/launcher/sha256.c")
-    add_includedirs("packages/server", "packages/launcher")
+    add_files("apps/launcher/http.c", "apps/launcher/files.c", "apps/launcher/sha256.c")
+    add_includedirs("apps/server", "apps/launcher")
     add_packages("lua", "libcurl")
     -- the version its requests say
     on_load(function (target)
@@ -148,35 +156,7 @@ target("server")
     if not is_plat("windows") then
         add_syslinks("pthread") -- the console's reader, the script's requests and the lobby's
     end
-    set_rundir("$(projectdir)/runtime")
-
--- The launcher, what a player starts (launcher/main.c): it brings the install up to the
--- latest release on GitHub, in a small window of its own, and starts the client. Its
--- name is the one a player looks for on Windows; on Linux one with no spaces. It works on
--- the directory it sits in, so it is tried in an unpacked package, not under xmake run.
-target("launcher")
-    set_kind("binary")
-    add_rules("icon")
-    set_basename(is_plat("windows") and "Soldat Reloaded" or "soldatreloaded-launcher")
-    add_files("packages/launcher/*.c")
-    add_includedirs("packages/launcher")
-    add_packages("libsdl2", "stb", "libcurl", "miniz")
-    add_defines('SOLDATRELOADED_RELEASES="https://github.com/soldatreloaded/soldatreloaded/releases"')
-    -- the version it says, and the platform whose manifest it asks for (latest-windows-x64.txt)
-    on_load(function (target)
-        import("core.project.project")
-        target:add("defines", 'SOLDATRELOADED_VERSION="' .. project.version() .. '"')
-        target:add("defines", 'SOLDATRELOADED_PLATFORM="' .. target:plat() .. "-" .. target:arch() .. '"')
-    end)
-    if is_plat("windows") then
-        if is_mode("debug") then
-            add_ldflags("/SUBSYSTEM:CONSOLE")
-        else
-            add_ldflags("/SUBSYSTEM:WINDOWS")
-        end
-    else
-        add_syslinks("pthread")
-    end
+    set_rundir("$(projectdir)/assets")
 
 -- The tests: headless checks of what shared/ holds, of the server's join, streams and
 -- rounds over the loopback (the server's systems are built into them), and of the
@@ -186,15 +166,15 @@ target("tests")
     set_kind("binary")
     set_default(false)
     add_deps("shared")
-    add_files("tests/*.c", "packages/server/connections.c", "packages/server/lists.c", "packages/server/rounds.c",
-              "packages/server/bots.c", "packages/server/host.c", "packages/server/script.c", "packages/server/lobby.c",
-              "packages/server/host_cvars.c", "packages/server/weapons_ini.c")
-    add_files("packages/launcher/*.c|main.c")
+    add_files("tests/*.c", "apps/server/connections.c", "apps/server/lists.c", "apps/server/rounds.c",
+              "apps/server/bots.c", "apps/server/host.c", "apps/server/script.c", "apps/server/lobby.c",
+              "apps/server/host_cvars.c", "apps/server/weapons_ini.c")
+    add_files("apps/launcher/*.c|updater.c") -- the update, not its window
     -- the client's line and its demos, for the demo's round trip (tests/demo_test.c),
     -- and its taunts, for the taunt editor's round trip (tests/taunts_test.c)
-    add_files("packages/client/net/client_net.c", "packages/client/net/demo.c", "packages/client/net/hwid.c",
-              "packages/client/ui/taunts.c")
-    add_includedirs("tests", "packages/server", "packages/launcher", "packages/client")
+    add_files("apps/client/net/client_net.c", "apps/client/net/demo.c", "apps/client/net/hwid.c",
+              "apps/client/ui/taunts.c", "apps/client/ui/mutes.c")
+    add_includedirs("tests", "apps/server", "apps/launcher", "apps/client")
     add_packages("lua", "libcurl", "miniz")
     if is_plat("windows") then
         add_syslinks("advapi32") -- the machine's ID, for its hardware ID (client/net/hwid.c)
@@ -209,15 +189,17 @@ target("tests")
 -- it unpacks (launcher/archive.h), so a package without it would scatter. A zip says where
 -- each file in it lies, so the launcher brings an update's files alone out of it, by range
 -- (launcher/update.h); on Linux it keeps the executables' bit, as Info-ZIP writes it. What
--- an install holds is runtime/'s data/, mods/default/ and scripts/, flat, which is how
--- the game expects to find them (docs/git.md, Releases); the game's package its config/ too.
+-- an install holds is assets/'s data/, mods/default/ and scripts/, flat, which is how
+-- the game expects to find them (docs/git.md, Releases); and config/.
 --
---   soldatreloaded          the game, a player's: everything, the server among it so anyone
---                           can host; the launcher, what a player starts, at the top, and
---                           the client and the server in bin/; and manifest.txt, what it
---                           all is, which an update is brought out of
+--   soldatreloaded          the game, a player's: its one executable at the top, which updates
+--                           the install as it starts and hosts Local Play itself, and
+--                           manifest.txt, what it all is, which an update is brought out of;
+--                           on Linux soldatreloaded-launcher beside it, the name players started
+--                           when the launcher was apart from the game, which starts the game
 --   soldatreloaded-server   a headless server's: the server at the top, its one executable;
---                           data/ and no mods/, no art and no sound
+--                           data/, config/ and scripts/, and no mods/, no art and no sound
+--                           but what data/textures/ and scenery-gfx/ hold of custom maps
 --
 -- `xmake dist` packs them into build/release/, beside the manifest the launcher reads:
 -- the game's, with the package named in it. The formats are launcher/manifest.h's.
@@ -229,10 +211,8 @@ local function release_package(name, suffix, bindir)
         set_bindir(bindir)
         add_installfiles("license.md")
         -- the server's scripts: the examples, the release's (main.lua, which runs them, is the
-        -- owner's: in the game's package, which the launcher leaves be once changed, and in
-        -- the server's none, as unpacking a release over a server would put it back as it
-        -- came; the server makes it there)
-        add_installfiles("runtime/(scripts/examples/**)")
+        -- owner's, each package's own below)
+        add_installfiles("assets/(scripts/examples/**)")
 end
 
 -- What every package's install is given last, as xpack lays it out: version.txt, and on
@@ -241,7 +221,7 @@ end
 -- the install but the manifest itself by hash (what the launcher does with each is
 -- launcher/update.h's), and leaves it in build/.xpack/manifest.txt for latest-<plat>-<arch>.txt. (Each
 -- step runs in a sandbox of its own, batchcmds:call's, so what it needs is local to it.)
-local function finish_install(manifest)
+local function finish_install(manifest, scripts)
     after_installcmd(function (package, batchcmds)
         local stash = path.join(import("core.project.config").builddir(), ".xpack", "manifest.txt")
 
@@ -275,18 +255,13 @@ local function finish_install(manifest)
             io.writefile(stash, text)
         end
 
-        -- the game's executables in bin/, where there is one; the launcher, what a player
-        -- starts, at the top, out of it
+        -- the executables, at the top, and the scripts that run like them
         local executables = {}
-        local bindir = path.relative(package:bindir(), package:installdir()):gsub("\\", "/")
         for _, target in ipairs(package:targets()) do
-            local file = target:filename()
-            if target:name() == "launcher" and bindir ~= "." then
-                batchcmds:mv(path.join(package:bindir(), file), path.join(package:installdir(), file))
-                table.insert(executables, file)
-            else
-                table.insert(executables, bindir == "." and file or bindir .. "/" .. file)
-            end
+            table.insert(executables, target:filename())
+        end
+        for _, name in ipairs(scripts or {}) do
+            table.insert(executables, name)
         end
         batchcmds:call(finish, {package:installdir(), package:version(), executables, not package:is_plat("windows", "mingw")})
         if manifest then
@@ -297,23 +272,29 @@ end
 
 -- The icons: the .ico only builds the executables, which hold it on Windows; the .png is
 -- the windows' elsewhere, and a server has neither.
-release_package("soldatreloaded", "", "bin")
-    add_targets("client", "server", "launcher")
-    add_installfiles("runtime/(data/**)|icon.ico|icon.png")
+release_package("soldatreloaded", "", ".")
+    add_targets("client")
+    add_installfiles("assets/(data/**)|icon.ico|icon.png")
     if not is_plat("windows") then
-        add_installfiles("runtime/(data/icon.png)")
+        add_installfiles("assets/(data/icon.png)")
+        -- the launcher's name when it was apart from the game, which a player's shortcut may start, and which that
+        -- launcher brings first as its own when it updates: it starts the game
+        add_installfiles("apps/launcher/soldatreloaded-launcher.sh", {filename = "soldatreloaded-launcher"})
     end
-    add_installfiles("runtime/(mods/default/**)") -- the game's; a player's mods beside it are theirs
+    add_installfiles("assets/(mods/default/**)") -- the game's; a player's mods beside it are theirs
     -- the settings, at their defaults: the player's once changed, which the launcher then leaves
-    -- be (launcher/update.h). Not in the server's package, unpacked over a server by hand: it
-    -- makes its own there
-    add_installfiles("runtime/(config/*)")
-    add_installfiles("runtime/(scripts/main.lua)") -- the owner's once they change it (launcher/update.h)
-    finish_install(true)
+    -- be (launcher/update.h)
+    add_installfiles("assets/(config/*)")
+    add_installfiles("assets/(scripts/main.lua)") -- the owner's once they change it (launcher/update.h)
+    finish_install(true, not is_plat("windows") and {"soldatreloaded-launcher"} or nil)
 
 release_package("soldatreloaded-server", "-server", ".")
     add_targets("server")
-    add_installfiles("runtime/(data/**)|icon.ico|icon.png")
+    add_installfiles("assets/(data/**)|icon.ico|icon.png")
+    -- the server's settings and its script, at their defaults, to be seen and changed from
+    -- the start; unpacking a later release over a server puts them back as they came
+    add_installfiles("assets/(config/*)|client.cfg")
+    add_installfiles("assets/(scripts/main.lua)")
     finish_install(false)
 
 -- xmake dist: the two packages, in build/release/, and latest-<plat>-<arch>.txt, the
@@ -329,7 +310,7 @@ task("dist")
         local outputdir = path.join(config.builddir(), "release")
         -- built once, and packed as built: each package carries the executables the
         -- manifest names by hash
-        os.execv(os.programfile(), {"build", "-y", "client", "server", "launcher"})
+        os.execv(os.programfile(), {"build", "-y", "client", "server"})
         for _, name in ipairs({"soldatreloaded", "soldatreloaded-server"}) do
             os.execv(os.programfile(), {"pack", "-y", "--autobuild=n", "-o", outputdir, name})
         end

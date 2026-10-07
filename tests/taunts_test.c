@@ -41,6 +41,16 @@ static void compose_and_read(void)
     CHECK(taunt_at(con, 31, &t) && t.radio == 9 && t.mode == TAUNT_TEAM && strcmp(t.text, "Base!") == 0,
           "a config's radio bind reads back too (%s, radio %d)", t.text, t.radio);
 
+    taunt_compose(text, sizeof text, TAUNT_TEAM, "", 6);
+    CHECK(strcmp(text, "radio 2 3") == 0, "a radio taunt with no message is the call alone, no space after (%s)", text);
+    taunt_set(con, 1, 0, text); // the 2 slot, on alt
+    const char *bound = console_bind_get(con, "alt+2");
+    CHECK(bound && strcmp(bound, "radio 2 3") == 0, "and is bound, not cleared");
+    CHECK(taunt_at(con, 1, &t) && t.radio == 6 && t.mode == TAUNT_TEAM && t.text[0] == '\0',
+          "and reads back as the call with no message (radio %d, \"%s\")", t.radio, t.text);
+    taunt_compose(text, sizeof text, t.mode, t.text, t.radio);
+    CHECK(strcmp(text, "radio 2 3") == 0, "and composes back the same (%s)", text);
+
     console_destroy(con);
 }
 

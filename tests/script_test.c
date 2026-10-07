@@ -164,7 +164,7 @@ void script_tests(void)
 
     // the game run from the chat, by the example that does it (scripts/examples/)
     CHECK(script_run(&script,
-                     "package.path = 'runtime/scripts/?.lua;' .. package.path\n"
+                     "package.path = 'assets/scripts/?.lua;' .. package.path\n"
                      "require('examples.match_controls')({countdown = 1})",
                      "match_controls"),
           "the match controls example is taken up");

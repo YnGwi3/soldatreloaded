@@ -8,7 +8,7 @@ into.
 
 ## The shape
 
-Three programs share one library, each a folder of packages/ (the paths in these docs are
+Three programs share one library, each a folder of apps/ (the paths in these docs are
 within it):
 
 - **shared/** is the simulation (shared/game), the data it reads (shared/resources:
@@ -344,14 +344,15 @@ everyone's command from `stream_command`, the bots' from their minds
 snapshot to every player); a round change if one is due; flush.
 
 **A host** (server/host.c) is the world with authority, the line, the players, the bots
-and the rounds in one struct, pumped by whoever owns it. The dedicated server
-(server/main.c) is a console and a stdin reader around one. The client's Local Play is
-that server: the `host` command starts bin/server beside the game (client/net/
-local_server.c) on the install's own files, its console piped into the game's, and joins
-it over the loopback once it says it is hosting, as it would any server. So a game
-against bots is the netcode's ordinary case with no latency, friends can join the same
-game at the player's address, and Local Play hosts exactly as a dedicated server from
-that install would: its server.cfg, weapons.ini, maplist.txt, lists and script.
+and the rounds in one struct, pumped by whoever owns it. A game hosted (server/hosted.c)
+is a host with what a server runs beside it: the script, the lobby's heartbeat, the
+weapons mod, by the hosting cvars and the files of config/. The dedicated server
+(server/main.c) is a console and a stdin reader around one; the client's Local Play holds
+another (the `host` command), pumped each frame before the client polls its own line,
+which it then joins over the loopback as it would any server. So a game against bots is
+the netcode's ordinary case with no latency, friends can join the same game at the
+player's address, and Local Play hosts exactly as a dedicated server from that install
+would: its server.cfg, weapons.ini, maplist.txt, lists and script.
 
 **The bots** (server/bots.c) are the original's AI (opensoldat's AI.pas), ported as it
 stands, and they sit where a client sits: a source of commands. Each tick a bot reads
@@ -387,9 +388,22 @@ the round's number). Both streams are stamped with the round and another round's
 dropped, so packets that cross the change do no harm. A client hears of its first round
 the same way it hears of every other: joining and a new round are one path.
 
+**A map the client lacks** (resources/mapfile.h, client/net/client_net.c). A map is
+loose (data/maps/<name>.pms, its art in data/textures/ and data/scenery-gfx/) or packed
+(<name>.smap, a zip of the .pms and its own art, OpenSoldat's form). MsgMap carries the
+SHA-256 of the map's .pms; a client looks among its own copies, loose then packed, for one
+that hashes so, and where none does it fetches the server's: MsgMapFetch asks for parts
+of the round's map, some 64 KB kept in flight, and the server answers each with a
+MsgMapPart, out of the map packed (a .smap as it is, a loose map zipped with what its
+data folder has of its art), made on the first ask and kept for the round. Both are
+reliable and name the round, so a fetch that crosses a change of map is dropped. The
+client checks the .pms in what came against the hash, writes it as data/maps/<name>.smap
+and makes its world of it; until then it takes no snapshots and says nothing of its
+soldier, which the server holds still. A demo plays on whatever copy of its map is here.
+
 ## Tests
 
-The simulation is tested as scenes (tests/test.c): a map loaded from runtime/data/, two
+The simulation is tested as scenes (tests/test.c): a map loaded from assets/data/, two
 soldiers placed, `game_tick` run with authority on scripted buttons, and the events
 tallied. Combat, corpses and things have their scenes; the passes' mail has
 events_test; the wire has its classification, round-trip and refusal tests; the join

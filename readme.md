@@ -29,14 +29,16 @@ It is playable now, online and against bots, but it is not finished: see
 - **A server browser and a lobby.** Servers that want to be found list themselves with
   [the lobby](https://github.com/soldatreloaded/soldatreloaded-lobby); the browser asks
   each one directly for its players and ping.
-- **A launcher that keeps the game up to date.** Start the game through it and each new
-  release is fetched before you play: only what changed, with your settings left alone.
+- **A game that keeps itself up to date.** Start it and each new release is fetched
+  before you play: only what changed, with your settings left alone.
 - **Scriptable servers.** A Lua 5.4 script on the server hears the game's events (joins,
   kills, chat, rounds), drives it back (say, kick, change map, pause), and can talk to
   the web over HTTP with JSON. See [docs/scripting.md](docs/scripting.md).
 - **More ways to look.** Five gostek types (male, female, waifu, rat, furry), colour
   pickers for every part, grenades in your own colour, and the sky and scenery as you
   like them.
+- **On your Discord profile.** With the Discord app running, it says you're playing
+  Soldat Reloaded, on which map and which server; `cl_discord 0` keeps it to yourself.
 - **Faithful where it counts.** Weapons, movement, bots, votes, the radio menu and the
   HUD are ported from OpenSoldat's code and kept to how it plays, with headless tests
   holding much of it there.
@@ -45,12 +47,12 @@ It is playable now, online and against bots, but it is not finished: see
 
 Download the latest release for Windows or Linux from
 [Releases](https://github.com/soldatreloaded/soldatreloaded/releases) and unpack it
-anywhere. Start **Soldat Reloaded.exe** on Windows, or **soldatreloaded-launcher** on
-Linux: it checks for updates, then starts the game.
+anywhere. Start **Soldat Reloaded.exe** on Windows, or **soldatreloaded** on Linux: it
+checks for updates, then plays.
 
 From the main menu, **Servers** lists the games being played, **Join by Address**
 connects to one you know, and **Local Play** hosts a game here, against bots or for
-friends on your network: it starts the dedicated server beside the game, so it plays by
+friends on your network: the game hosts it as the dedicated server would, so it plays by
 the same files in `config/` (the settings, the weapons mod, the rotation it ticks into
 `maplist.txt`) as a server from this install would. **Taunts** sets what a key says: a
 message to everyone or to your team, or your own words as a radio call.
@@ -63,12 +65,11 @@ the scoreboard.
 
 ### The install
 
-The folder you unpacked, as the launcher keeps it:
+The folder you unpacked, as the game keeps it:
 
 | | holds | an update |
 |---|---|---|
-| `Soldat Reloaded.exe` | the launcher (`soldatreloaded-launcher` on Linux) | replaces it first, on its own, then asks you to start again |
-| `bin/` | `client`, the game, and `server`, the dedicated server | replaces them |
+| `Soldat Reloaded.exe` | the game (`soldatreloaded` on Linux, with `soldatreloaded-launcher` beside it, the old launcher's name, which starts it) | replaces it first, on its own, then starts the new one |
 | `data/` | the maps, animations, skeletons and bots the game plays by | keeps it exactly as released |
 | `mods/default/` | the art, sounds and fonts | keeps it exactly as released |
 | `mods/` (beside `default/`) | your mods | never touches them |
@@ -111,8 +112,8 @@ isn't a mod's to change: everyone in a game has to have the same.
 ## Running a server
 
 The release's `-server` package is a headless server: the game, the maps and nothing to
-draw. Unpack it and run `server` (`server.exe` on Windows; in the game's own folder it is
-`bin/server`); its settings are in `config/server.cfg`, which it makes on its first start
+draw. Unpack it and run `server` (`server.exe` on Windows);
+its settings are in `config/server.cfg`, which it makes on its first start
 with every `sv_*` and `bots_*` setting and what it is, the game's default commented out (take a
 line's `//` off to set it otherwise), or given on the command line, which goes over it:
 
@@ -121,22 +122,32 @@ server +sv_hostname "My server" +sv_maps "ctf_Ash ctf_Kampf" +sv_password secret
 ```
 
 Beside it in `config/`, made on the first start, are its weapons mod and the lists it
-reads, the bans and mutes among them, which it writes too. The server package ships no
-`config/`, so unpacking a new release over a server never touches them; a server starts
-with the game's own weapons, and a `weapons.ini` that lists them all, commented out. (The
-game's package ships its `config/` with GatherWM as the weapons mod, for Local Play.)
+reads, the bans and mutes among them, which it writes too. Both packages ship `config/` at
+its defaults, GatherWM as the weapons mod among them, and `scripts/main.lua`, so a server
+unpacked fresh has everything to see and change. Unpacking a new release over a server puts
+them back as they came: keep a copy of what you change. Without a `weapons.ini` a server
+plays the game's own weapons, and writes one that lists them all, commented out.
 
 | file | holds |
 |---|---|
 | `weapons.ini` | a weapons mod, as Soldat's weapons.ini has it (a Soldat or OpenSoldat mod works as it is): a section for each weapon, each number it changes; sent to every player who joins |
 | `maplist.txt` | the rotation, a map to a line, which Local Play's map list writes (`sv_maps` on the command line goes over it); a map the server hasn't got is passed over |
-| `admins.txt` | the addresses of the admins, who may `/kick`, `/ban`, `/mute` and `/map` from the chat (or set `sv_adminpassword` and `/login`) |
+| `admins.txt` | the addresses of the admins, who may `/kick`, `/ban`, `/servermute` and `/map` from the chat (or set `sv_adminpassword` and `/login`) |
 | `banlist.txt`, `mutelist.txt` | the bans and mutes, which the server keeps as players are banned and muted: each by the player's address and their machine's hardware ID, so a new address alone doesn't lift it (`/banip` and `/banhw` bar one of them alone) |
 
 `sv_public 1` lists it in the game's server browser, once its UDP port (23073 by
 default) can be reached from outside. A script in `scripts/main.lua` runs with it, yours to
 write; the examples in `scripts/examples/` show what a script can do, and `main.lua` names
 them, ready to take up (docs/scripting.md).
+
+### Custom maps
+
+Put a custom map in `data/maps/`, either as OpenSoldat passes them around, a `.smap`
+holding the map and its own textures and scenery, or as a loose `.pms` with its texture in
+`data/textures/` and its scenery in `data/scenery-gfx/`. Name it in the rotation as any
+other. A player who joins without it, or with another version of it, is sent it by the
+server over the game's own connection, nothing else to open, and plays it once it has
+come; it is kept in their `data/maps/` as a `.smap`.
 
 ## Building
 
@@ -147,26 +158,26 @@ headers, which have to be installed first (the list is in
 [.github/workflows/ci.yml](.github/workflows/ci.yml)).
 
 ```
-xmake              # the client, the server and the launcher
-xmake run client   # play, in runtime/
+xmake              # the game and the dedicated server
+xmake run client   # play, in assets/
 xmake run server   # a dedicated server
 xmake test         # the headless tests
 xmake dist         # the release packages, into build/release/
 ```
 
-The game finds `data/`, `mods/`, `config/` and `scripts/` in the directory it runs from: `runtime/`
+The game finds `data/`, `mods/`, `config/` and `scripts/` in the directory it runs from: `assets/`
 under `xmake run`, which holds them as an install lays them out, or an unpacked package.
 
 ## How it's put together
 
 | | |
 |---|---|
-| `packages/shared/` | The simulation (`game/`), the maps, animations and skeletons it reads (`resources/`), the wire (`network/`), the console and the utilities. Built into both the client and the server, so both run the same game. |
-| `packages/client/` | The window, input, rendering (OpenGL 2.1), audio, the HUD and menus, and the client's end of the netcode. |
-| `packages/server/` | The headless server: connections, rounds, bots, votes, the Lua scripting and the lobby heartbeat. |
-| `packages/launcher/` | The updater: fetches the newest release from GitHub, brings only the files that changed, by the rules in [The install](#the-install), and starts the game. |
+| `apps/shared/` | The simulation (`game/`), the maps, animations and skeletons it reads (`resources/`), the wire (`network/`), the console and the utilities. Built into both the client and the server, so both run the same game. |
+| `apps/client/` | The window, input, rendering (OpenGL 2.1), audio, the HUD and menus, and the client's end of the netcode. |
+| `apps/server/` | The headless server: connections, rounds, bots, votes, the Lua scripting and the lobby heartbeat. |
+| `apps/launcher/` | The updater: fetches the newest release from GitHub, brings only the files that changed, by the rules in [The install](#the-install), and starts the game. |
 | `tests/` | Headless checks of the simulation on real maps and of the netcode over the loopback. |
-| `runtime/` | What ships beside the executables, laid out as an install (see [The install](#the-install)): `data/`, the maps, animations, skeletons and bots the game plays by, and `mods/default/`, the art, sounds and fonts it looks and sounds like, both from [opensoldat/base](https://github.com/opensoldat/base); `config/` at its defaults; `scripts/`, the server's Lua scripts. What you add there as you play (`demos/`, a mod beside `mods/default/`) git leaves out. |
+| `assets/` | What ships beside the executables, laid out as an install (see [The install](#the-install)): `data/`, the maps, animations, skeletons and bots the game plays by, and `mods/default/`, the art, sounds and fonts it looks and sounds like, both from [opensoldat/base](https://github.com/opensoldat/base); `config/` at its defaults; `scripts/`, the server's Lua scripts. What you add there as you play (`demos/`, a mod beside `mods/default/`) git leaves out. |
 | `docs/` | How it works and how to work on it. |
 
 The docs go deeper:
@@ -196,7 +207,7 @@ in its description what it changes in play.
 ## Licence
 
 The code is under the MIT licence: [license.md](license.md). The game's content in
-`runtime/data/` and `runtime/mods/default/` is OpenSoldat's, under CC BY 4.0, with a few
-exceptions such as the menu's fonts; [runtime/data/NOTICE.md](runtime/data/NOTICE.md) and
-[runtime/mods/default/NOTICE.md](runtime/mods/default/NOTICE.md) have the details and the
+`assets/data/` and `assets/mods/default/` is OpenSoldat's, under CC BY 4.0, with a few
+exceptions such as the menu's fonts; [assets/data/NOTICE.md](assets/data/NOTICE.md) and
+[assets/mods/default/NOTICE.md](assets/mods/default/NOTICE.md) have the details and the
 credits.

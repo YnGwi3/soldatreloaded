@@ -25,7 +25,7 @@ Game *scene(const char *map, float gap, WeaponId a_weapon, WeaponId b_weapon)
 {
     Game *g = calloc(1, sizeof(Game));
     if (!g || !context_load(&g->ctx, TEST_DATA, map)) {
-        printf("could not load map '%s' from runtime/data/: the tests run from the project directory\n", map);
+        printf("could not load map '%s' from assets/data/: the tests run from the project directory\n", map);
         exit(2);
     }
     game_init(g, 1, match_settings_for_map(g->ctx.map));
@@ -60,6 +60,7 @@ static void tally(Tally *t, const Events *events)
         case EVENT_BULLET_SPAWN: t->spawned[e->bullet_spawn.weapon]++; break;
         case EVENT_FIRE: t->fired++; break;
         case EVENT_HIT: t->hits++; break;
+        case EVENT_BLOOD: t->bloods++; break;
         case EVENT_KILL: t->kills++; break;
         case EVENT_EXPLOSION: t->explosions++; break;
         case EVENT_DAMAGE: t->damage += e->damage.amount; break;
@@ -181,6 +182,8 @@ int main(void)
     bink_tests();
     lists_tests();
     weapons_mod_tests();
+    mapfile_tests();
+    mutes_tests();
     printf("%d checks, %d failed\n", checks, failures);
     return failures != 0;
 }

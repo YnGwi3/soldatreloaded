@@ -135,6 +135,25 @@ void join_tests(void)
     CHECK(g->world.soldiers[0].active && !g->world.soldiers[0].dead && strcmp(conns.items[0].name, "Tester") == 0,
           "with a soldier alive in that slot, named");
     CHECK(connections_count(&conns) == 1, "one player on the server");
+    {
+        // placed, it is told as a respawn: the next tick's things pass hears it, and the
+        // wire takes it to the clients for the sound and the spark
+        bool told = false;
+        for (int i = 0; i < g->incoming.count; i++) {
+            const Event *e = &g->incoming.items[i];
+            told |= e->type == EVENT_RESPAWN && e->respawn.target == 0 && e->respawn.life == g->world.soldiers[0].life &&
+                    vec2_length(vec2_sub(e->respawn.pos, g->world.soldiers[0].pos)) < 1.0f;
+        }
+        CHECK(told, "the joiner's placing is a respawn, where it stands");
+        Command none[MAX_PLAYERS] = {0};
+        game_tick(g, none);
+        static WireQueue q;
+        wire_queue_init(&q);
+        wire_collect(&q, &g->events, g->world.tick - 1, -1);
+        bool sent = false;
+        for (uint32_t seq = q.first; seq < q.next; seq++) sent |= q.items[seq % WIRE_QUEUE].type == EVENT_RESPAWN;
+        CHECK(sent, "and goes on the wire with the tick");
+    }
 
     CHECK(client_open(&b, NET_VERSION + 1), "a second client connects, with the wrong version");
     pump(&conns, g, clients, 2, second_answered);
@@ -157,6 +176,7 @@ void join_tests(void)
     CHECK(client_open(&d, NET_VERSION), "a third client connects");
     pump(&conns, g, three, 3, third_welcomed);
     CHECK(d.welcomed && d.welcome.slot == 1, "and is welcomed into slot 1");
+    CHECK(strcmp(conns.items[1].name, "Tester(1)") == 0, "the name it said taken, as Tester(1) (%s)", conns.items[1].name);
     CHECK(a.announcements == 2, "which the first hears of (%d announcements)", a.announcements);
     g->world.soldiers[1].team = TEAM_BRAVO;
     int a_before = a.chats, d_before = d.chats;
@@ -292,11 +312,11 @@ void join_tests(void)
     CHECK(p.welcomed && strcmp(conns.items[p.welcome.slot].hwid, "FFFFFFFFFFF") == 0,
           "and is welcomed, the server keeping its hardware ID (welcomed %d: %s)", p.welcomed, p.denial.reason);
     char mute[32];
-    snprintf(mute, sizeof mute, "mute %d", p.welcome.slot);
+    snprintf(mute, sizeof mute, "servermute %d", p.welcome.slot); // an admin's, in the chat /servermute
     CHECK(connections_admin(&conns, NULL, -1, mute) && conns.lists.mute_count == 1 &&
               strcmp(conns.lists.mutes[0].hwid, "FFFFFFFFFFF") == 0,
-          "a player muted is muted by their machine too");
-    connections_admin(&conns, NULL, -1, "unmute FFFFFFFFFFF");
+          "a player muted (servermute) is muted by their machine too");
+    connections_admin(&conns, NULL, -1, "serverunmute FFFFFFFFFFF");
     connections_admin(&conns, NULL, -1, "unban 0A1B2C3D4E5");
     CHECK(conns.lists.mute_count == 0 && conns.lists.ban_count == 0, "and unmuted and unbanned by hardware ID");
     net_close(&p.link);
@@ -326,6 +346,23 @@ void join_tests(void)
     CHECK(conns.vote.kind == VOTE_NONE && left_ban,
           "and leaving before the kick vote against it is decided ends the vote, and bars it five minutes");
     *flag = *gun = (Thing){0};
+
+    // a name already held is numbered, players' and bots' alike, the number cut into a
+    // long one (NetworkServerConnection.pas)
+    int bob = connections_add_bot(&conns, g, "Bob", (PlayerLook){0}, WEAPON_AK74, WEAPON_NONE, TEAM_NONE);
+    int bob1 = connections_add_bot(&conns, g, "Bob", (PlayerLook){0}, WEAPON_AK74, WEAPON_NONE, TEAM_NONE);
+    int bob2 = connections_add_bot(&conns, g, "Bob", (PlayerLook){0}, WEAPON_AK74, WEAPON_NONE, TEAM_NONE);
+    CHECK(bob >= 0 && bob1 >= 0 && bob2 >= 0 && strcmp(conns.items[bob].name, "Bob") == 0 &&
+              strcmp(conns.items[bob1].name, "Bob(1)") == 0 && strcmp(conns.items[bob2].name, "Bob(2)") == 0,
+          "a second Bob is Bob(1), a third Bob(2)");
+    const char *longest = "ABCDEFGHIJKLMNOPQRSTUVW"; // all a name holds
+    int lone = connections_add_bot(&conns, g, longest, (PlayerLook){0}, WEAPON_AK74, WEAPON_NONE, TEAM_NONE);
+    int twin = connections_add_bot(&conns, g, longest, (PlayerLook){0}, WEAPON_AK74, WEAPON_NONE, TEAM_NONE);
+    CHECK(lone >= 0 && twin >= 0 && strcmp(conns.items[twin].name, "ABCDEFGHIJKLMNOPQRST(1)") == 0,
+          "and a name too long for its number is cut for it (%s)", twin >= 0 ? conns.items[twin].name : "");
+    int bots[] = {bob, bob1, bob2, lone, twin};
+    for (int i = 0; i < 5; i++)
+        if (bots[i] >= 0) connections_remove_bot(&conns, g, bots[i]);
 
     net_close(&b.link);
     net_close(&server);

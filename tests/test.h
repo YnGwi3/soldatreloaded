@@ -2,7 +2,7 @@
 
 // The tests: headless checks of the simulation on real maps, and of the console. Each
 // suite is a function of checks; a check that fails says where and why, and the run
-// ends with how many failed. They read the maps and animations from runtime/data/, so they
+// ends with how many failed. They read the maps and animations from assets/data/, so they
 // run from the project directory:
 //
 //   xmake test
@@ -15,7 +15,7 @@
 #include "game/systems/systems.h"
 
 // What the game plays by (data/), as the tests find it from the project directory.
-#define TEST_DATA "runtime/data"
+#define TEST_DATA "assets/data"
 
 // --- checks ------------------------------------------------------------------------
 
@@ -40,6 +40,7 @@ void settle(Game *g);
 typedef struct Tally {
     int spawned[WEAPON_COUNT]; // bullets, by weapon
     int fired, hits, kills, explosions;
+    int bloods; // hits heard and seen (EVENT_BLOOD)
     float damage;
 } Tally;
 
@@ -77,6 +78,8 @@ void stream_tests(void);
 void rewind_tests(void);
 void console_tests(void);
 void taunt_tests(void);
+void mapfile_tests(void);
+void mutes_tests(void);
 void color_tests(void);
 void bot_tests(void);
 void round_tests(void);

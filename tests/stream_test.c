@@ -512,9 +512,25 @@ void stream_tests(void)
     CHECK(c.stream.blend[2].x == 0.0f, "with cl_smooth 0 it snaps");
     const Soldier *second_seen = &c.game->world.soldiers[2];
     CHECK(second_seen->active && second_seen->remote && fabsf(second_seen->pos.x - second_there->pos.x) < 30.0f &&
-              strcmp(c.stream.names[2], "Mover") == 0,
-          "and the first client sees it, named, near where the server has it (%d active, %.1f vs %.1f, '%s')", second_seen->active,
+              strcmp(c.stream.names[2], "Mover(1)") == 0,
+          "and the first client sees it, named (its name numbered, the first's being taken), near where the server has it (%d active, %.1f vs %.1f, '%s')", second_seen->active,
           second_seen->pos.x, second_there->pos.x, c.stream.names[2]);
+    // a corpse is the client's own, as the original never corrects one: begun from the
+    // served half alone (no word of the kill heard), it lies where the ragdoll here has
+    // it, and no word of the server's moves it or shows as a correction
+    die(&gs->ctx, &gs->world, (Hit){.shooter = 2, .target = 2, .amount = 4.0f * DEFAULT_HEALTH, .pos = second_there->pos}, &gs->events);
+    for (int round = 0; round < 20 && !(second_seen->dead && c.game->world.ragdolls[2].active); round++) play(&conns, gs, &c, 1, 0, 0);
+    CHECK(second_seen->dead && c.game->world.ragdolls[2].active, "a player killed lies as a corpse here, begun from the served half");
+    Ragdoll *body = &c.game->world.ragdolls[2];
+    for (int k = 0; k < RAGDOLL_POINTS; k++) body->pos[k].x += 40.0f, body->old_pos[k].x += 40.0f;
+    float corpse_blend = 0.0f;
+    for (int round = 0; round < 20; round++) {
+        play(&conns, gs, &c, 1, 0, 0);
+        corpse_blend = fmaxf(corpse_blend, vec2_length(c.stream.blend[2]));
+    }
+    CHECK(second_seen->dead && corpse_blend == 0.0f && fabsf(second_seen->pos.x - second_there->pos.x) > 30.0f,
+          "and the server's word of it neither moves it nor corrects the picture (%.1f here, %.1f there, %.1f blended at most)",
+          second_seen->pos.x, second_there->pos.x, corpse_blend);
     net_close(&d.link);
     for (int round = 0; round < 50 && conns.items[2].peer; round++) {
         connections_poll(&conns, gs);
@@ -528,6 +544,21 @@ void stream_tests(void)
     play(&conns, gs, &c, 2, 0, 0);
     CHECK(gs->match.state == MATCH_ENDED, "the clock runs out and the round ends");
     gs->match.counter = 1; // the scores stand a tick rather than five seconds
+    // What is the player's outlives the world made anew: the look, said once in the Hello,
+    // and the loadout, until the client says it again. The next round is begun here, as the
+    // loop would once the scores have stood, so nothing is said between.
+    Soldier before[2] = {gs->world.soldiers[0], gs->world.soldiers[BOT]};
+    before[0].look.shirt = gs->world.soldiers[0].look.shirt = (Rgba){9, 8, 7, 255};
+    before[0].primary_choice = gs->world.soldiers[0].primary_choice = WEAPON_BARRETT;
+    before[0].secondary_choice = gs->world.soldiers[0].secondary_choice = WEAPON_LAW;
+    round_start(gs, &conns, TEST_DATA, "ctf_Ash", MATCH_MODE_COUNT);
+    for (int k = 0; k < 2; k++) {
+        const Soldier *was = &before[k], *now = &gs->world.soldiers[k == 0 ? 0 : BOT];
+        CHECK(memcmp(&now->look, &was->look, sizeof now->look) == 0 && now->primary_choice == was->primary_choice &&
+                  now->secondary_choice == was->secondary_choice && now->gear == was->gear && now->bot == was->bot,
+              "soldier %d keeps its look and loadout into the new round (shirt %u, primary %d, secondary %d)", k == 0 ? 0 : BOT,
+              now->look.shirt.r, now->primary_choice, now->secondary_choice);
+    }
     play(&conns, gs, &c, 30, 0, 0);
     CHECK(conns.round == 2 && strcmp(conns.map, "ctf_Ash") == 0, "the server begins round %u on %s", conns.round, conns.map);
     CHECK(c.round == 2 && strcmp(c.map, "ctf_Ash") == 0, "and the client is told, and makes its world anew (%u on %s)", c.round, c.map);

@@ -46,7 +46,7 @@ static void side_take(Side *s)
         side_free(s);
         s->g = calloc(1, sizeof(Game));
         if (!s->g || !context_load(&s->g->ctx, TEST_DATA, s->net.map)) {
-            printf("could not load map '%s' from runtime/data/\n", s->net.map);
+            printf("could not load map '%s' from assets/data/\n", s->net.map);
             exit(2);
         }
         MatchSettings settings = match_settings_for_map(s->g->ctx.map);
@@ -188,6 +188,7 @@ void demo_tests(void)
     static Seen recorded[RECORDED];
     memset(&live, 0, sizeof live);
     client_net_init(&live.net);
+    snprintf(live.net.data_dir, sizeof live.net.data_dir, "%s", TEST_DATA);
     client_net_connect(&live.net, con, "127.0.0.1", PORT, "Recorder", "");
     static DemoRecorder rec;
     memset(&rec, 0, sizeof rec);
@@ -232,6 +233,7 @@ void demo_tests(void)
               "its header says its ticks (%u), my slot and the map", player.header.ticks);
         memset(&played, 0, sizeof played);
         client_net_init(&played.net);
+        snprintf(played.net.data_dir, sizeof played.net.data_dir, "%s", TEST_DATA);
         client_net_play(&played.net, player.header.slot);
         Played run = play(&player, &played, con, recorded, ticks);
         CHECK(run.at == ticks, "every tick played (%d of %d)", run.at, ticks);

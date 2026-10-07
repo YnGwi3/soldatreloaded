@@ -33,12 +33,22 @@ jobs:
       - uses: actions/checkout@v4
 
       # What SDL2 builds against on Linux: X11, Wayland, OpenGL and the sound systems; and
-      # Info-ZIP, which packs the zips with the executables' bit (xmake.lua)
+      # Info-ZIP, which packs the zips with the executables' bit (xmake.lua). On some
+      # runners archive.ubuntu.com, in the image's mirror list, crawls: apt spreads the
+      # files across every mirror listed, so a file given to it held the step half an hour.
+      # The list is a CDN, and the image's own mirror only if the CDN fails; apt gives a
+      # dead one up in seconds, and a hang that still comes fails the step, not the hour.
       - name: system libraries
         if: matrix.platform == 'linux'
+        timeout-minutes: 10
         run: |
-          sudo apt-get update
-          sudo apt-get install -y --no-install-recommends \
+          if [ -f /etc/apt/apt-mirrors.txt ]; then
+            printf 'http://mirrors.edge.kernel.org/ubuntu/\tpriority:1\nhttp://azure.archive.ubuntu.com/ubuntu/\tpriority:2\n' \
+              | sudo tee /etc/apt/apt-mirrors.txt
+          fi
+          apt="sudo apt-get -o Acquire::http::Timeout=30 -o Acquire::Retries=3"
+          $apt update
+          $apt install -y --no-install-recommends \
             build-essential cmake pkg-config \
             libx11-dev libxext-dev libxrandr-dev libxcursor-dev libxi-dev libxinerama-dev \
             libxss-dev libxfixes-dev libxrender-dev libxkbcommon-dev \
@@ -58,8 +68,12 @@ jobs:
       - name: package
         run: xmake dist
 
+      # Built and run rather than xmake test, which keeps the tests' own output: a failure
+      # says which check, from the run that failed
       - name: test
-        run: xmake test -y
+        run: |
+          xmake build -y tests
+          xmake run tests
 
       - if: inputs.keep-packages
         uses: actions/upload-artifact@v4

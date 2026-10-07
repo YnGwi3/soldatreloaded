@@ -5,6 +5,7 @@
 static Buttons hold_throw(int tick) { return tick < 30 ? BUTTON_THROW : 0; }
 static Buttons hold_drop(int tick) { return tick < 30 ? BUTTON_DROP : 0; }
 static Buttons tap_drop(int tick) { return tick < 3 ? BUTTON_DROP : 0; }
+static Buttons drop_then_fire(int tick) { return (tick < 10 ? BUTTON_DROP : 0) | (tick >= 4 && tick < 14 ? BUTTON_FIRE : 0); }
 static Buttons tap_suicide(int tick) { return tick == 0 ? BUTTON_SUICIDE : 0; }
 
 static void rifle_kills(void)
@@ -66,6 +67,21 @@ static void knife(void)
     Tally t = run(g, 60, hold_drop);
     CHECK(t.spawned[WEAPON_THROWN_KNIFE] == 1, "the knife is thrown spinning, not dropped (%d)", t.spawned[WEAPON_THROWN_KNIFE]);
     CHECK(g->world.soldiers[0].weapon.id == WEAPON_NONE, "and leaves the hands empty");
+    scene_free(g);
+
+    // fire breaks off a throw, even just spawned, under protection
+    g = scene("Arena", 150, WEAPON_KNIFE, WEAPON_AK74);
+    settle(g);
+    g->world.soldiers[0].cease_fire_counter = DEFAULT_CEASE_FIRE;
+    t = run(g, 30, drop_then_fire);
+    CHECK(t.spawned[WEAPON_THROWN_KNIFE] == 0 && g->world.soldiers[0].weapon.id == WEAPON_KNIFE,
+          "fire breaks off a knife throw under spawn protection (%d thrown)", t.spawned[WEAPON_THROWN_KNIFE]);
+    scene_free(g);
+
+    g = scene("Arena", 50, WEAPON_KNIFE, WEAPON_AK74);
+    settle(g);
+    t = run(g, 60, hold_drop);
+    CHECK(t.hits >= 1 && t.bloods == t.hits, "a thrown knife's hit is heard, with blood (%d hits, %d heard)", t.hits, t.bloods);
     scene_free(g);
 
     g = scene("Arena", 150, WEAPON_BOW, WEAPON_AK74);

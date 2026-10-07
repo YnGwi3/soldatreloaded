@@ -59,6 +59,27 @@ static void medikit(void)
     scene_free(g);
 }
 
+static void grenade_kits(void)
+{
+    Game *g = scene("ctf_Ash", 200, WEAPON_AK74, WEAPON_AK74);
+    settle(g);
+    int kit = find_thing(g, THING_GRENADE_KIT);
+    Vec2 was = g->world.things[kit].pos[0];
+    int other = thing_create(&g->ctx, &g->world, THING_GRENADE_KIT, was, WEAPON_NONE, 0, -1);
+    Soldier *s = &g->world.soldiers[0];
+    s->grenades = 0;
+    place(s, was);
+    run(g, 2, press_nothing);
+    CHECK(s->grenades == g->world.rules.max_grenades, "a grenade kit fills the grenades");
+    int left = 0;
+    for (int i = 0; i < 2; i++) {
+        const Thing *t = &g->world.things[i == 0 ? kit : other];
+        left += t->style == THING_GRENADE_KIT && vec2_length(vec2_sub(t->pos[0], was)) < 10.0f;
+    }
+    CHECK(left == 1, "and of two together the second is left for later (%d left)", left);
+    scene_free(g);
+}
+
 static void capture(void)
 {
     Game *g = scene("ctf_Ash", 200, WEAPON_AK74, WEAPON_AK74);
@@ -143,7 +164,8 @@ static void flag_thrown(void)
     CHECK(flag->holder == 0 && s->held == 0, "the throw key lets it go");
     CHECK(along > 3.0f && vec2_length(flew) < 8.0f, "flying along the aim at the throw's power (%.2f, %.2f)", flew.x, flew.y);
     CHECK(vec2_length(vec2_sub(flag->pos[0], held)) > 20.0f, "from a step ahead of the thrower");
-    CHECK(s->flag_grab_cooldown == 15, "who may not take it back for a quarter second (%d)", s->flag_grab_cooldown);
+    // the quarter second counts from the throw's own things pass, as the original's Update counts it
+    CHECK(s->flag_grab_cooldown == 14, "who may not take it back for a quarter second (%d)", s->flag_grab_cooldown);
     run(g, 5, press_nothing);
     CHECK(flag->holder == 0, "and doesn't");
     scene_free(g);
@@ -154,6 +176,7 @@ void thing_tests(void)
     round_start();
     dropped_gun();
     medikit();
+    grenade_kits();
     capture();
     flag_thrown();
     parachute();
