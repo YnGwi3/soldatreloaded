@@ -34,17 +34,17 @@ jobs:
 
       # What SDL2 builds against on Linux: X11, Wayland, OpenGL and the sound systems; and
       # Info-ZIP, which packs the zips with the executables' bit (xmake.lua). On some
-      # runners the image's own Ubuntu mirror (azure.archive.ubuntu.com) never answers and
-      # apt's fallback crawls, half an hour without the index: a CDN goes first in the
-      # mirror list, apt gives a dead one up in seconds, and a hang that still comes fails
-      # the step rather than the hour.
+      # runners archive.ubuntu.com, in the image's mirror list, crawls: apt spreads the
+      # files across every mirror listed, so a file given to it held the step half an hour.
+      # The list is a CDN, and the image's own mirror only if the CDN fails; apt gives a
+      # dead one up in seconds, and a hang that still comes fails the step, not the hour.
       - name: system libraries
         if: matrix.platform == 'linux'
         timeout-minutes: 10
         run: |
           if [ -f /etc/apt/apt-mirrors.txt ]; then
-            printf '%s\n' http://mirrors.edge.kernel.org/ubuntu/ http://azure.archive.ubuntu.com/ubuntu/ \
-              http://archive.ubuntu.com/ubuntu/ | sudo tee /etc/apt/apt-mirrors.txt
+            printf 'http://mirrors.edge.kernel.org/ubuntu/\tpriority:1\nhttp://azure.archive.ubuntu.com/ubuntu/\tpriority:2\n' \
+              | sudo tee /etc/apt/apt-mirrors.txt
           fi
           apt="sudo apt-get -o Acquire::http::Timeout=30 -o Acquire::Retries=3"
           $apt update
