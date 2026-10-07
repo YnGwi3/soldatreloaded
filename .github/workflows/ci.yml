@@ -68,10 +68,12 @@ jobs:
       - name: package
         run: xmake dist
 
-      # xmake test keeps the tests' own output; a failure runs them again to say which check
+      # Built and run rather than xmake test, which keeps the tests' own output: a failure
+      # says which check, from the run that failed
       - name: test
-        shell: bash
-        run: xmake test -y || { xmake run tests; exit 1; }
+        run: |
+          xmake build -y tests
+          xmake run tests
 
       - if: inputs.keep-packages
         uses: actions/upload-artifact@v4
